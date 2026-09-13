@@ -1,0 +1,87 @@
+
+* { box-sizing: border-box; } /* Isso resolve 90% das quebras de layout */
+body { margin: 0; padding: 0; overflow-x: hidden; }
+
+/* --- Refinamento do Layout --- */
+
+.app-container {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 12px; /* Ligeiro aumento para dar respiro nas bordas */
+  box-sizing: border-box;
+}
+
+.resumo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); /* Ajustado para 120px para garantir 2 colunas em 320px */
+  gap: 8px; /* Reduzido para economizar espaço */
+  margin-bottom: 16px;
+}
+
+.card {
+  background: #2d3748;
+  padding: 12px;
+  border-radius: 8px;
+  text-align: center;
+  border: 1px solid #4a5568;
+}
+
+.input-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #232d3d;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+input, select {
+  width: 100%;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #4a5568;
+  background: #1a202c;
+  color: #fff;
+  font-size: 16px; /* Mantido para evitar zoom no iOS */
+  box-sizing: border-box;
+}
+
+.btn-action {
+  width: 100%;
+  padding: 14px; /* Aumentado para melhor área de toque (tappable area) */
+  background: #2563eb;
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+/* --- Tratamento da Lista (Essencial para não quebrar) --- */
+.lista {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.item-row {
+  background: #2d3748;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #4a5568;
+  display: flex; /* Flex ajuda a controlar o estouro de texto */
+  justify-content: space-between;
+  align-items: center;
+  overflow: hidden; /* Corta texto que estourar o container */
+}
+
+/* Ajuste Desktop */
+@media (min-width: 600px) {
+  .input-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}

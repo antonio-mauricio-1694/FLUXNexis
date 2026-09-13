@@ -1,0 +1,45 @@
+<div class="app-container">
+  <header>
+    <h1>M&M Finanças</h1>
+    <p>Controle Local Compartilhado</p>
+  </header>
+
+  <!-- Navegação Mensal Estilizada -->
+  <div class="header-main">
+  <div class="mes-selector-box">
+    <span style="font-size: 1.2rem;">📅</span>
+    <input 
+      type="month" 
+      [ngModel]="mesAtual" 
+      (ngModelChange)="selecionarMes($event)"
+      class="mes-input">
+  </div>
+</div>
+
+  <div class="resumo-grid">
+    <div class="card">Saldo: R$ {{ (totalEntradas - totalDespesas).toFixed(2) }}</div>
+    <div class="card">Entradas: R$ {{ totalEntradas.toFixed(2) }}</div>
+    <div class="card">Gastos: R$ {{ totalDespesas.toFixed(2) }}</div>
+  </div>
+
+  <div class="card">
+    <div class="form-grid">
+      <input [(ngModel)]="novo.descricao" placeholder="Descrição">
+      <input type="number" [(ngModel)]="novo.valorRealizado" placeholder="R$">
+      <select [(ngModel)]="novo.tipo">
+        <option value="saida">Saída</option>
+        <option value="entrada">Entrada</option>
+      </select>
+      <button class="btn-action" (click)="salvar()">Salvar</button>
+      <button class="btn-action btn-pdf" (click)="gerarPDF()">Exportar PDF</button>
+    </div>
+  </div>
+
+  <div class="lista">
+    <!--lancamentos' e 'valorRealizado -->
+    <div *ngFor="let item of lancamentos" class="item-row">
+      <span>{{ item.descricao }} - R$ {{ item.valorRealizado.toFixed(2) }}</span>
+      <button (click)="excluir(item.id!)" style="background:none; border:none; color:#f87171; cursor:pointer">✕</button>
+    </div>
+  </div>
+</div>
