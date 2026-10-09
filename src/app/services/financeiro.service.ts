@@ -98,7 +98,8 @@ export class FinanceiroService {
    * RESUMO FINANCEIRO
    * =========================================================
    */
-calcularResumo(lancamentos: Lancamento[]): ResumoFinanceiro {
+
+  calcularResumo(lancamentos: Lancamento[]): ResumoFinanceiro {
     const realizados = this.obterLancamentosRealizados(lancamentos);
 
     let entradas = 0;
@@ -141,15 +142,12 @@ calcularResumo(lancamentos: Lancamento[]): ResumoFinanceiro {
     const saldoReserva = Math.max(0, reservas - retiradasReserva);
     const saldoInvestimentos = Math.max(0, investimentos - retiradasInvestimento);
 
-    // O saldo real só desconta as saídas comuns da conta, aportes para reserva e aportes para investimento.
-    // Retiradas de reserva/investimento NÃO mexem no saldo real (pois já saíram no passado).
     const saldoReal =
       entradas -
       despesasSaldo -
       reservas -
       investimentos;
 
-    // As despesas totais somam tudo para ir direto para os gastos e categorias
     const despesas =
       despesasSaldo +
       retiradasReserva +
@@ -163,6 +161,7 @@ calcularResumo(lancamentos: Lancamento[]): ResumoFinanceiro {
       saldoReal
     };
   }
+
   calcularTotalReserva(lancamentos: Lancamento[]): number {
     const realizados = this.obterLancamentosRealizados(lancamentos);
     let total = 0;
@@ -261,7 +260,6 @@ calcularResumo(lancamentos: Lancamento[]): ResumoFinanceiro {
       ? lancamentos.filter(l => l.data && l.data.startsWith(anoMes))
       : lancamentos;
 
-    // Considera qualquer tipo de saída como despesa para fins de categoria
     const despesas = lancamentosFiltrados.filter(
       l =>
         (l.tipo === 'saida' ||
@@ -418,12 +416,8 @@ calcularResumo(lancamentos: Lancamento[]): ResumoFinanceiro {
    * =========================================================
    */
 
-  private obterLancamentosRealizados(
-    lancamentos: Lancamento[]
-  ): Lancamento[] {
-    return lancamentos.filter(
-      l => l.statusPagamento === 'pago'
-    );
+  private obterLancamentosRealizados(lancamentos: Lancamento[]): Lancamento[] {
+    return lancamentos.filter(l => l.statusPagamento === 'pago');
   }
 
   private normalizarLancamento(lancamento: Lancamento): Lancamento {

@@ -1,13 +1,9 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.fluxneis.app',
-  appName: 'FluxNeis',
-  // O caminho correto encontrado no seu find foi dist/app/browser
-  webDir: 'dist/app/browser',
-  server: {
-    androidScheme: 'https'
-  }
+  appId: 'com.fluxneix.app',
+  appName: 'FluxNexis',
+  webDir: 'dist/app/browser'
 };
 
 export default config;

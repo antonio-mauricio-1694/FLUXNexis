@@ -6,6 +6,7 @@ import {
   OnInit,
   ViewChild,
   computed,
+  inject,
   signal
 } from '@angular/core';
 
@@ -14,19 +15,21 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 
 import { FinanceiroService } from '../../services/financeiro.service';
-import { Lancamento } from '../../services/db.service';
-import { AnaliseFinanceiraService } from '../../services/analise-financeira.service';
+import { DivisaoLancamento, Lancamento } from '../../services/db.service';
 import { PdfExportService } from '../../services/pdf-export.service';
 import { ExcelExportService } from '../../services/excel-export.service';
 import { BackupService } from '../../services/backup.service';
 import { NotificacaoService } from '../../services/notificacao.service';
+import { NotaService, Nota } from '../../services/nota.service';
+
+import { CalculatorComponent } from '../../calculator/calculator.component';
 
 import {
   TipoLancamentoFinanceiro,
   ViewAtual
 } from '../../services/financeiro.model';
 
-type ViewAtualExtendida = ViewAtual | 'relatorio' | 'metas';
+type ViewAtualExtendida = ViewAtual | 'relatorio' | 'metas' | 'analytics';
 
 interface ItemDonut {
   categoria: string;
@@ -45,2075 +48,1479 @@ interface AnaliseTipoResultado {
   quantidadeTotal: number;
 }
 
-interface PontoEvolucao {
-  x: number;
-  y: number;
+interface HistoricoItem {
+  id?: number;
+  descricao: string;
+  categoria: string;
+  data: string;
+  tipo: string;
+  valor: number;
 }
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    CommonModule,
-    FormsModule
-  ],
+  imports: [CommonModule, FormsModule, CalculatorComponent],
   styles: [`
     :host {
-      --bg-base: #222224;
-      --bg-glow-blue: rgba(39, 145, 130, 0.18);
-      --bg-glow-green: rgba(16, 185, 129, 0.14);
-      --card-bg: rgba(20, 21, 22, 0.18);
-      --card-border: rgba(232, 238, 247, 0.15);
-      --card-border-hover: rgba(84, 141, 247, 0.45);
-      --text-primary: #fdfcfc;
-      --text-secondary: #94a3b8;
-      --text-muted: #f0f6fd;
-      --primary: #3b82f6;
-      --primary-dark: #2563eb;
+      --bg-base: #07090e;
+      --bg-surface: rgba(18, 22, 33, 0.85);
+      --bg-surface-hover: rgba(26, 32, 48, 0.95);
+      --card-border: rgba(255, 255, 255, 0.12);
+      --card-border-hover: rgba(139, 92, 246, 0.5);
+      --text-primary: #ffffff;
+      --text-secondary: #cbd5e1;
+      --text-muted: #94a3b8;
+      --primary: #8b5cf6;
+      --primary-dark: #6d28d9;
       --success: #10b981;
-      --success-dark: #059669;
       --danger: #ef4444;
-      --danger-dark: #b91c1c;
       --warning: #f59e0b;
-      --purple: #8b5cf6;
-      --purple-dark: #6d28d9;
-      --amber: #f59e0b;
-      --amber-dark: #d97706;
-      --tab-active: #4ade80;
-      --nav-height: 66px;
-      --radius-lg: 18px;
-      --radius-md: 12px;
-      --radius-sm: 8px;
-      --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.35);
+      --nav-height: 76px;
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --shadow-glow: 0 16px 40px -10px rgba(139, 92, 246, 0.25);
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     .app-container {
-      max-width: 960px;
+      max-width: 680px;
       margin: 0 auto;
-      padding: 0 16px calc(var(--nav-height) + 32px + env(safe-area-inset-bottom));
+      padding: 0 16px calc(var(--nav-height) + 40px + env(safe-area-inset-bottom));
       width: 100%;
       min-width: 0;
       overflow-x: hidden;
-      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
       color: var(--text-primary);
       min-height: 100vh;
       background:
-        linear-gradient(180deg, rgba(11, 15, 25, 0.25), rgba(11, 15, 25, 0.19)),
-        radial-gradient(circle at 15% 0%, var(--bg-glow-blue) 0%, transparent 45%),
-        radial-gradient(circle at 85% 20%, var(--bg-glow-green) 0%, transparent 40%),
+        linear-gradient(180deg, rgba(7, 9, 14, 0.9) 0%, rgba(11, 14, 22, 0.99) 100%),
+        radial-gradient(circle at 10% 5%, rgba(139, 92, 246, 0.2) 0%, transparent 45%),
+        radial-gradient(circle at 90% 15%, rgba(236, 72, 153, 0.18) 0%, transparent 40%),
         url('../../../assets/images/imagem2.png') center center / cover no-repeat fixed;
       background-color: var(--bg-base);
     }
 
-    @media (max-width: 768px) {
-      .app-container {
-        background-attachment: scroll;
-      }
+    @media (min-width: 768px) {
+      .app-container { max-width: 900px; padding-left: 24px; padding-right: 24px; }
     }
 
     .topbar {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding-top: max(20px, env(safe-area-inset-top));
-      padding-bottom: 14px;
-      margin-bottom: 20px;
+      display: flex; align-items: center; justify-content: space-between;
+      padding-top: max(22px, env(safe-area-inset-top));
+      padding-bottom: 16px; margin-bottom: 20px;
     }
+
+    .brand-section { display: flex; align-items: center; gap: 12px; }
 
     .btn-hamburguer {
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 5px;
-      width: 40px;
-      height: 40px;
-      flex-shrink: 0;
-      background: rgba(239, 242, 248, 0.29);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      cursor: pointer;
-      padding: 0;
-      margin-left: 16px;
-      transition: background 0.15s ease;
+      display: flex; flex-direction: column; justify-content: center; gap: 5px;
+      width: 42px; height: 42px; flex-shrink: 0;
+      background: var(--bg-surface); border: 1px solid var(--card-border);
+      border-radius: var(--radius-sm); cursor: pointer; padding: 0;
+      backdrop-filter: blur(12px); transition: all 0.2s ease;
     }
-
-    .btn-hamburguer:hover {
-      background: rgba(15, 15, 15, 0.17);
-    }
-
+    .btn-hamburguer:hover { background: var(--bg-surface-hover); border-color: var(--card-border-hover); }
     .btn-hamburguer span {
-      display: block;
-      height: 2px;
-      width: 20px;
-      margin: 0 auto;
-      background: #3d3d41;
-      border-radius: 2px;
+      display: block; height: 2px; width: 18px; margin: 0 auto;
+      background: var(--text-primary); border-radius: 2px;
+    }
+
+    .brand-title-wrap { display: flex; align-items: center; gap: 10px; }
+
+    .flux-logo-icon {
+      width: 40px; height: 40px; border-radius: 12px;
+      background: linear-gradient(145deg, rgba(139, 92, 246, 0.2), rgba(56, 189, 248, 0.15));
+      border: 1px solid rgba(192, 132, 252, 0.4);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 8px 20px -4px rgba(139, 92, 246, 0.4); flex-shrink: 0;
     }
 
     .flux-title {
-      font-size: 1.5rem;
-      font-weight: 800;
-      letter-spacing: -0.5px;
-      background: linear-gradient(90deg, #3b82f6, #10b981);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      margin: 0;
+      font-size: 1.45rem; font-weight: 900; letter-spacing: -0.3px;
+      background: linear-gradient(135deg, #c084fc 0%, #38bdf8 50%, #34d399 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; margin: 0;
+    }
+
+    .hero-balance-card {
+      background: var(--bg-surface); backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 26px 24px; margin-bottom: 16px;
+      box-shadow: var(--shadow-glow);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .hero-balance-content { display: flex; align-items: center; gap: 16px; width: 100%; }
+
+    .wallet-icon-box {
+      width: 56px; height: 56px; border-radius: 16px;
+      background: rgba(16, 185, 129, 0.18);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      display: flex; align-items: center; justify-content: center;
+      color: #34d399; box-shadow: inset 0 2px 6px rgba(16, 185, 129, 0.2);
+      flex-shrink: 0;
+    }
+
+    .hero-subtitle {
+      font-size: 0.8rem; font-weight: 800; letter-spacing: 0.8px;
+      text-transform: uppercase; color: var(--text-secondary);
+      margin-bottom: 4px; display: block;
+    }
+    .hero-balance-value {
+      font-size: clamp(1.4rem, 6vw, 2.1rem);
+      font-weight: 900; letter-spacing: -0.5px;
+      color: #ffffff; word-break: break-word;
+    }
+
+    .status-financeiro-card {
+      border-radius: var(--radius-md); padding: 18px 22px;
+      margin-bottom: 22px; border: 1px solid;
+      display: flex; align-items: center; justify-content: space-between;
+      transition: all 0.3s ease; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+    .status-info-wrap { display: flex; align-items: center; gap: 16px; }
+    .status-icon-box {
+      width: 46px; height: 46px; border-radius: 12px;
+      background: rgba(11, 14, 22, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-primary); flex-shrink: 0;
+    }
+    .status-label-top {
+      font-size: 0.75rem; font-weight: 800; letter-spacing: 0.9px;
+      text-transform: uppercase; color: var(--text-secondary);
+      display: block; margin-bottom: 3px;
+    }
+    .status-value-text {
+      font-size: 1.1rem; font-weight: 900; letter-spacing: -0.2px;
+      word-break: break-word;
+    }
+    .status-dot-indicator {
+      width: 16px; height: 16px; border-radius: 50%;
+      box-shadow: 0 0 14px currentColor; flex-shrink: 0;
+    }
+
+    .quick-actions-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 12px; margin-bottom: 24px;
+    }
+    @media(max-width: 500px) {
+      .quick-actions-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    .quick-action-btn {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 8px; background: transparent; border: none;
+      cursor: pointer; padding: 0;
+    }
+    .quick-action-icon {
+      width: 100%; height: 60px; border-radius: var(--radius-md);
+      background: var(--bg-surface); border: 1px solid var(--card-border);
+      backdrop-filter: blur(14px);
+      display: flex; align-items: center; justify-content: center;
+      color: #c084fc; transition: all 0.2s ease;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+    }
+    .quick-action-btn:hover .quick-action-icon {
+      background: var(--bg-surface-hover);
+      border-color: var(--primary);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(139, 92, 246, 0.35);
+      color: #ffffff;
+    }
+    .quick-action-label {
+      font-size: 0.8rem; font-weight: 700;
+      color: var(--text-secondary); text-align: center;
     }
 
     .drawer {
-      position: fixed;
-      top: 0;
-      left: 0;
-      height: 100vh;
-      width: 280px;
-      max-width: 82vw;
-      background: rgba(55, 57, 59, 0.53);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
+      position: fixed; top: 0; left: 0; height: 100vh;
+      width: 300px; max-width: 85vw;
+      background: rgba(11, 14, 22, 0.98);
+      backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
       border-right: 1px solid var(--card-border);
-      box-shadow: 12px 0 32px rgba(0, 0, 0, 0.13);
+      box-shadow: 25px 0 50px rgba(0, 0, 0, 0.7);
       transform: translateX(-105%);
-      transition: transform 0.25s ease;
-      z-index: 60;
-      display: flex;
-      flex-direction: column;
-      padding: max(20px, env(safe-area-inset-top)) 16px 20px;
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 60; display: flex; flex-direction: column;
+      padding: max(24px, env(safe-area-inset-top)) 20px 24px;
       overflow-y: auto;
     }
-
-    .drawer.aberto {
-      transform: translateX(0);
-    }
-
+    .drawer.aberto { transform: translateX(0); }
     .drawer-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 24px;
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 28px;
     }
-
     .drawer-titulo {
-      font-size: 1.15rem;
-      font-weight: 800;
-      background: linear-gradient(90deg, #3b82f6, #10b981);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      font-size: 1.25rem; font-weight: 800;
+      background: linear-gradient(135deg, #c084fc, #38bdf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text;
     }
-
     .btn-fechar-drawer {
-      background: transparent;
-      border: none;
-      color: #ebf1f1;
-      font-size: 1.3rem;
-      cursor: pointer;
-      line-height: 1;
-      padding: 4px 8px;
+      background: var(--bg-surface); border: 1px solid var(--card-border);
+      color: var(--text-secondary); width: 36px; height: 36px;
+      border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .btn-fechar-drawer:hover {
+      color: var(--text-primary); background: var(--bg-surface-hover);
+      border-color: var(--card-border-hover);
     }
 
     .secao-titulo {
-      font-size: 0.68rem;
-      font-weight: 700;
-      letter-spacing: 0.8px;
-      text-transform: uppercase;
-      color: #64748b;
-      margin: 4px 0 8px;
+      font-size: 0.75rem; font-weight: 800; letter-spacing: 1px;
+      text-transform: uppercase; color: var(--text-muted);
+      margin: 12px 0 10px;
     }
-
     .acao-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      width: 100%;
-      padding: 12px 14px;
-      border-radius: var(--radius-sm);
-      border: none;
-      color: white;
-      font-weight: 700;
-      font-size: 0.88rem;
-      cursor: pointer;
-      margin-bottom: 8px;
-      transition: opacity 0.2s ease, transform 0.15s ease;
+      display: flex; align-items: center; gap: 12px; width: 100%;
+      padding: 14px 16px; border-radius: var(--radius-sm);
+      border: 1px solid var(--card-border); color: var(--text-primary);
+      font-weight: 700; font-size: 0.92rem; cursor: pointer;
+      margin-bottom: 10px; background: var(--bg-surface);
+      transition: all 0.2s ease;
     }
-
     .acao-item:hover {
-      opacity: 0.92;
+      background: var(--bg-surface-hover);
+      border-color: var(--card-border-hover);
+      transform: translateY(-1px);
     }
-
-    .acao-item:active {
-      transform: scale(0.98);
-    }
-
-    .acao-item:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .acao-pdf { background: linear-gradient(135deg, var(--success), var(--success-dark)); }
-    .acao-excel { background: linear-gradient(135deg, #04b980, #047857); }
-    .acao-backup { background: linear-gradient(135deg, var(--purple), var(--purple-dark)); }
-    .acao-restore { background: linear-gradient(135deg, var(--amber), var(--amber-dark)); }
+    .acao-item:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
     .drawer-rodape {
-      margin-top: auto;
-      padding-top: 16px;
+      margin-top: auto; padding-top: 20px;
       border-top: 1px solid var(--card-border);
-      font-size: 0.72rem;
-      color: #64748b;
-      text-align: center;
+      font-size: 0.8rem; color: var(--text-muted); text-align: center;
     }
 
     .backdrop-drawer {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.55);
-      z-index: 50;
-      animation: aparecer 0.2s ease;
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(6px); z-index: 50;
+      animation: fadeIn 0.25s ease;
     }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-    @keyframes aparecer {
-      from { opacity: 0; }
-      to { opacity: 1; }
+    .portfolio-carousel-container {
+      position: relative; margin-bottom: 22px;
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; min-width: 0;
     }
-
-    .cabecalho-pagina {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px;
-    }
-
-    .titulo-pagina {
-      font-size: 1.3rem;
-      font-weight: 800;
-      margin: 0;
-    }
-
-    .link-voltar {
-      background: transparent;
-      border: 1px solid var(--card-border);
-      color: #fffdfd;
-      border-radius: 20px;
-      padding: 7px 14px;
-      font-weight: 700;
-      font-size: 0.8rem;
-      cursor: pointer;
-    }
-
-    .link-voltar:hover {
-      background: rgba(247, 248, 245, 0.9);
-      color: #111827;
-    }
-
-    /* ===== Seletor de mês: nativo, sem overlay, sem showPicker() ===== */
-
-    .mes-selector-box {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: var(--card-bg);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      padding: 2px 12px;
-      border-radius: 20px;
-      border: 1px solid var(--card-border);
-      box-shadow: var(--shadow-soft);
-      flex-wrap: wrap;
-      max-width: 100%;
-      width: fit-content;
-      margin: 0 0 14px 0;
-      font-size: 0.85rem;
-    }
-
-    .calendar-icon {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 18px;
-      height: 18px;
-      color: var(--primary);
-      flex-shrink: 0;
-    }
-
-    .mes-input {
-      background: transparent;
-      border: none;
-      color: #f7f2f2;
-      font-size: 0.8rem;
-      font-weight: 100;
-      padding-left: 10px;
-      cursor: pointer;
-      outline: none;
-      max-width: 150px;
-      color-scheme: dark;
-    }
-
-    .svg-icon {
-      width: 18px;
-      height: 18px;
-      display: block;
-      flex-shrink: 0;
-    }
-
-    .svg-icon.grande {
-      width: 22px;
-      height: 22px;
-    }
-
-    .svg-icon-pro {
-      width: 16px;
-      height: 16px;
-      display: inline-block;
-      vertical-align: middle;
-      fill: currentColor;
-    }
-
-    .card-status-hero {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      background: var(--card-bg);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      padding: 10px 18px;
+    .portfolio-carousel-track {
+      overflow: hidden; width: 100%; min-width: 0;
       border-radius: var(--radius-lg);
-      border: 1px solid var(--card-border);
-      box-shadow: var(--shadow-soft);
-      margin-bottom: 14px;
-      transition: border-color 0.2s ease;
     }
-
-    .card-status-hero:hover {
-      border-color: var(--card-border-hover);
-    }
-
-    .status-icone-wrap {
-      width: 42px;
-      height: 42px;
-      border-radius: 12px;
+    .portfolio-carousel-inner {
       display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      will-change: transform;
     }
-
-    .status-icone-wrap.tranquilo { background: rgba(33, 145, 104, 0.93); }
-    .status-icone-wrap.alerta { background: rgba(251, 191, 36, 0.15); }
-    .status-icone-wrap.critico { background: rgba(248, 113, 113, 0.15); }
-
-    .status-texto-wrap {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .status-eyebrow {
-      font-size: 0.64rem;
-      font-weight: 700;
-      letter-spacing: 0.8px;
-      text-transform: uppercase;
-      color: var(--text-muted);
-    }
-
-    .status-valor {
-      font-size: 1.05rem;
-      font-weight: 800;
-      letter-spacing: -0.2px;
-    }
-
-    .resumo-mes-card {
-      background: var(--card-bg);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
+    .portfolio-subcard-lg {
+      min-width: 100%; width: 100%; box-sizing: border-box;
+      background: linear-gradient(145deg, rgba(22, 27, 40, 0.9), rgba(13, 17, 26, 0.98));
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
       border: 1px solid var(--card-border);
       border-radius: var(--radius-lg);
-      padding: 20px 18px 8px;
-      margin-bottom: 18px;
-      box-shadow: var(--shadow-soft);
+      padding: 22px 18px;
+      display: flex; flex-direction: column; gap: 12px;
+      box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      position: relative; overflow: hidden;
     }
-
-    .resumo-mes-titulo {
-      font-size: 1.05rem;
-      font-weight: 800;
-      margin: 0 0 16px 0;
+    .portfolio-subcard-lg::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+      background: linear-gradient(90deg, transparent, var(--card-accent, var(--primary)), transparent);
     }
-
-    .resumo-colunas {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 4px;
-      margin-bottom: 14px;
+    .subcard-header-lg {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
     }
-
-    .resumo-coluna {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      text-align: center;
-      position: relative;
+    .subcard-icone {
+      width: 38px; height: 38px; border-radius: 12px;
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0; border: 1px solid;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
     }
-
-    .resumo-coluna + .resumo-coluna::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      top: 6px;
-      bottom: 6px;
-      width: 1px;
-      background: var(--card-border);
-    }
-
-    .resumo-icone {
-      width: 42px;
-      height: 42px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .resumo-icone.saldo { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
-    .resumo-icone.entradas { background: rgba(52, 211, 153, 0.15); color: #34d399; }
-    .resumo-icone.gastos { background: rgba(248, 113, 113, 0.15); color: #f87171; }
-
-    .resumo-label {
-      font-size: 0.62rem;
-      font-weight: 700;
-      letter-spacing: 0.6px;
-      text-transform: uppercase;
-      color: var(--text-muted);
-    }
-
-    .resumo-valor {
-      font-size: 0.95rem;
-      font-weight: 800;
-      letter-spacing: -0.2px;
-    }
-
-    .sparkline-wrap {
-      width: 100%;
-      line-height: 0;
-      margin: 0 -18px;
-    }
-
-    .sparkline-svg {
-      width: 100%;
-      height: 90px;
-      display: block;
-    }
-
-    .patrimonio-card {
-      background: var(--card-bg);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius-lg);
-      padding: 18px;
-      margin-bottom: 18px;
-      box-shadow: var(--shadow-soft);
-    }
-
-    .patrimonio-titulo-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 14px;
-    }
-
-    .patrimonio-titulo-row strong {
-      font-size: 1.05rem;
-      font-weight: 800;
-    }
-
-    .patrimonio-info-icon {
-      width: 20px;
-      height: 20px;
-      color: var(--primary);
-      cursor: help;
-    }
-
-    .patrimonio-subcards {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-      margin-bottom: 14px;
-    }
-
-    .patrimonio-subcard {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      background: rgba(148, 163, 184, 0.10);
-      border: 1px solid rgba(148, 163, 184, 0.22);
-      border-radius: var(--radius-md);
-      padding: 12px;
-    }
-
-    .patrimonio-subcard-cabecalho {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .patrimonio-icone {
-      width: 26px;
-      height: 26px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-
-    .patrimonio-icone.reserva { background: rgba(96, 165, 250, 0.25); color: #93c5fd; }
-    .patrimonio-icone.investimento { background: rgba(52, 211, 153, 0.25); color: #6ee7b7; }
-
-    .patrimonio-label {
-      font-size: 0.6rem;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-      color: #93c5fd;
+    .subcard-icone svg { width: 20px; height: 20px; display: block; }
+    .subcard-label-lg {
+      font-size: 0.9rem; font-weight: 900; letter-spacing: 1px;
+      text-transform: uppercase; color: var(--text-secondary);
       line-height: 1.2;
     }
-
-    .patrimonio-subcard.investimento .patrimonio-label {
-      color: #6ee7b7;
+    .subcard-valor-lg {
+      font-size: clamp(1.4rem, 6vw, 2.35rem);
+      font-weight: 900; letter-spacing: -0.5px;
+      margin-top: 4px; word-break: break-word;
     }
 
-    .patrimonio-valor {
-      font-size: 1.05rem;
-      font-weight: 800;
+    .carousel-btn {
+      background: var(--bg-surface); border: 1px solid var(--card-border);
+      color: var(--text-primary); width: 40px; height: 40px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; flex-shrink: 0;
+      backdrop-filter: blur(12px); transition: all 0.2s ease;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3); z-index: 2;
+    }
+    .carousel-btn:hover {
+      background: var(--bg-surface-hover);
+      border-color: var(--primary);
+      transform: scale(1.05); color: #c084fc;
+    }
+    @media (max-width: 360px) {
+      .carousel-btn { width: 32px; height: 32px; }
     }
 
-    .patrimonio-progress-wrap {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
+    .carousel-indicators {
+      display: flex; justify-content: center; gap: 8px;
+      margin-top: 12px; margin-bottom: 22px;
+    }
+    .indicator-dot {
+      width: 8px; height: 8px; border-radius: 4px;
+      background: rgba(255, 255, 255, 0.2);
+      border: none; cursor: pointer;
+      transition: all 0.3s ease; padding: 0;
+    }
+    .indicator-dot.ativo {
+      width: 24px; background: #c084fc;
+      box-shadow: 0 0 10px rgba(192, 132, 252, 0.5);
     }
 
-    .patrimonio-progress-legenda {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.68rem;
-      color: var(--text-secondary);
-      font-weight: 600;
+    .mes-selector-box {
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg-surface); backdrop-filter: blur(16px);
+      padding: 12px 20px; border-radius: var(--radius-md);
+      border: 1px solid var(--card-border);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      width: fit-content; margin: 0 0 20px 0; font-size: 0.92rem;
+    }
+    .calendar-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #c084fc; margin-right: 10px;
+    }
+    .mes-input {
+      background: transparent; border: none; color: var(--text-primary);
+      font-size: 0.95rem; font-weight: 700; cursor: pointer;
+      outline: none; color-scheme: dark;
     }
 
-    .patrimonio-progress-track {
-      width: 100%;
-      height: 6px;
-      border-radius: 20px;
-      background: rgba(255, 255, 255, 0.08);
-      overflow: hidden;
-    }
-
-    .patrimonio-progress-fill {
-      height: 100%;
-      border-radius: 20px;
-      background: linear-gradient(90deg, #3b82f6, #10b981);
-      transition: width 0.35s ease;
-    }
-
-    .patrimonio-progress-texto {
-      text-align: center;
-      font-size: 0.95rem;
-      font-weight: 800;
-    }
-
-    .analise-card {
-      background: linear-gradient(145deg, rgba(24, 26, 30, 0.78), rgba(13, 15, 18, 0.42));
-      backdrop-filter: blur(16px);
+    .card-modulo {
+      background: var(--bg-surface); backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--card-border);
       border-radius: var(--radius-lg);
-      padding: 18px;
-      margin-bottom: 18px;
-      box-shadow: var(--shadow-soft);
+      padding: 24px; margin-bottom: 22px;
+      box-shadow: 0 12px 35px -8px rgba(0, 0, 0, 0.5);
+      overflow: hidden;
+    }
+    .card-titulo {
+      font-size: 1.15rem; font-weight: 900; margin: 0 0 18px 0;
+      display: flex; align-items: center; gap: 10px;
     }
 
-    .analise-cabecalho {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 16px;
+    .sparkline-wrap {
+      width: 100%; line-height: 0;
+      margin: 10px -24px -24px -24px;
+      border-bottom-left-radius: var(--radius-lg);
+      border-bottom-right-radius: var(--radius-lg);
+      overflow: hidden;
     }
-
-    .analise-titulo {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 1rem;
-      font-weight: 800;
-    }
+    .sparkline-svg { width: 100%; height: 95px; display: block; }
 
     .analise-select {
-      background: rgba(56, 57, 58, 0.7);
+      background: rgba(11, 14, 22, 0.95);
       border: 1px solid var(--card-border);
-      color: var(--text-primary);
-      border-radius: var(--radius-sm);
-      padding: 9px 12px;
-      outline: none;
-      font-size: 0.78rem;
-      cursor: pointer;
-      width: 100%;
-      margin-bottom: 18px;
-    }
-
-    .analise-select:focus {
-      border-color: var(--primary);
-    }
-
-    .analise-select option {
-      background: #252629;
-      color: #ffffff;
+      color: var(--text-primary); border-radius: var(--radius-sm);
+      padding: 14px; outline: none; font-size: 0.92rem;
+      font-weight: 700; cursor: pointer; width: 100%; margin-bottom: 18px;
     }
 
     .categoria-corpo {
-      display: flex;
-      align-items: center;
-      gap: 18px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
+      display: flex; align-items: center; gap: 20px;
+      flex-wrap: wrap; margin-bottom: 16px;
     }
-
     .donut-wrap {
-      width: 150px;
-      height: 150px;
-      flex-shrink: 0;
-      position: relative;
+      width: 150px; height: 150px; flex-shrink: 0;
+      position: relative; margin: 0 auto;
     }
-
-    .donut-svg {
-      width: 100%;
-      height: 100%;
-    }
-
-    .donut-svg circle {
-      transition: stroke-dasharray 0.4s ease;
-    }
+    .donut-svg { width: 100%; height: 100%; }
 
     .legend-list {
-      flex: 1;
-      min-width: 180px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      max-height: 220px;
-      overflow-y: auto;
-      padding-right: 4px;
+      flex: 1; min-width: 180px;
+      display: flex; flex-direction: column; gap: 8px;
+      max-height: 200px; overflow-y: auto; padding-right: 4px;
     }
-
     .legend-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.03);
     }
-
-    .legend-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    .legend-icone {
-      color: var(--text-secondary);
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-    }
-
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
     .legend-nome {
-      flex: 1;
-      font-size: 0.82rem;
-      font-weight: 600;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      flex: 1; font-size: 0.85rem; font-weight: 700;
+      color: var(--text-secondary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-
     .legend-valor {
-      font-size: 0.8rem;
-      font-weight: 700;
-      color: var(--text-secondary);
-      white-space: nowrap;
-    }
-
-    .categoria-stats {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .categoria-stat-box {
-      background: rgba(255, 255, 255, 0.035);
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      border-radius: var(--radius-sm);
-      padding: 12px;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-    }
-
-    .categoria-stat-label {
-      font-size: 0.64rem;
-      text-transform: uppercase;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-      color: var(--text-secondary);
-    }
-
-    .categoria-stat-valor {
-      font-size: 1.15rem;
-      font-weight: 800;
-    }
-
-    .analise-vazia,
-    .placeholder-view {
-      padding: 30px 15px;
-      text-align: center;
-      color: var(--text-secondary);
-      border: 1px dashed var(--card-border);
-      border-radius: var(--radius-md);
-      font-size: 0.8rem;
-    }
-
-    .placeholder-view {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 10px;
-      padding: 60px 20px;
-    }
-
-    .placeholder-icone {
-      font-size: 2.4rem;
-    }
-
-    .placeholder-titulo {
-      font-size: 1rem;
-      color: var(--text-primary);
-    }
-
-    .placeholder-texto {
-      max-width: 320px;
-      line-height: 1.5;
+      font-size: 0.85rem; font-weight: 900;
+      color: var(--text-primary); white-space: nowrap;
     }
 
     .bottom-nav {
-      position: fixed;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 70;
-      display: flex;
-      justify-content: space-around;
-      align-items: center;
-      height: var(--nav-height);
-      padding-bottom: env(safe-area-inset-bottom);
-      background: rgba(17, 18, 20, 0.85);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
-      border-top: 1px solid var(--card-border);
+      position: fixed; left: 16px; right: 16px;
+      bottom: max(16px, env(safe-area-inset-bottom));
+      max-width: 480px; margin: 0 auto; z-index: 70;
+      display: flex; justify-content: space-around; align-items: center;
+      height: var(--nav-height); padding: 0 10px;
+      background: rgba(15, 20, 30, 0.92);
+      backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 28px;
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
     }
-
     .nav-tab {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 3px;
-      background: transparent;
-      border: none;
-      color: var(--text-secondary);
-      cursor: pointer;
-      flex: 1;
-      padding: 6px 4px;
+      display: flex; flex-direction: column; align-items: center;
+      gap: 4px; background: transparent; border: none;
+      color: var(--text-secondary); cursor: pointer;
+      flex: 1; padding: 6px; transition: all 0.2s ease;
     }
-
     .nav-tab-label {
-      font-size: 0.66rem;
-      font-weight: 700;
+      font-size: 0.72rem; font-weight: 800; letter-spacing: 0.3px;
     }
+    .nav-tab.ativo { color: #c084fc; }
 
-    .nav-tab.ativo {
-      color: var(--tab-active);
+    .cabecalho-pagina {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px; gap: 12px; flex-wrap: wrap;
     }
-
-    .nav-tab-icon {
-      width: 22px;
-      height: 22px;
-      display: block;
+    .titulo-pagina { font-size: 1.3rem; font-weight: 900; margin: 0; }
+    .link-voltar {
+      background: var(--bg-surface); border: 1px solid var(--card-border);
+      color: var(--text-primary); border-radius: var(--radius-sm);
+      padding: 8px 16px; font-weight: 700; font-size: 0.85rem;
+      cursor: pointer; transition: all 0.2s;
     }
-
-    .input-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 10px;
-      background: var(--card-bg);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      padding: 18px;
-      border-radius: var(--radius-lg);
-      margin-bottom: 20px;
-      border: 1px solid var(--card-border);
-      box-shadow: var(--shadow-soft);
-    }
-
-    @media (min-width: 640px) {
-      .input-grid {
-        grid-template-columns: 2fr 1fr 1fr 1fr;
-      }
-    }
-
-    .input-grid input,
-    .input-grid select {
-      background: rgba(56, 57, 58, 0.6);
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius-sm);
-      padding: 12px 14px;
-      color: var(--text-primary);
-      font-size: 0.95rem;
-      outline: none;
-      transition: border-color 0.2s ease;
-      width: 100%;
-    }
-
-    .input-grid input::placeholder {
-      color: var(--text-secondary);
-    }
-
-    .input-grid input:focus,
-    .input-grid select:focus {
-      border-color: var(--primary);
-    }
-
-    .input-grid select option {
-      background: #252629;
-      color: #ffffff;
-    }
-
-    .btn-salvar {
-      grid-column: 1 / -1;
-      padding: 13px;
-      border: none;
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      color: white;
-      font-weight: 700;
-      font-size: 0.9rem;
-      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-      transition: transform 0.15s ease, opacity 0.2s ease;
-    }
-
-    @media (min-width: 640px) {
-      .btn-salvar {
-        grid-column: auto;
-      }
-    }
-
-    .btn-salvar:hover {
-      opacity: 0.92;
-    }
-
-    .btn-salvar:active {
-      transform: scale(0.97);
-    }
-
-    .lancamentos-view {
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-      min-width: 0;
-    }
-
-    .lancamentos-form-fixed {
-      flex: 0 0 auto;
-      width: 100%;
-      min-width: 0;
-      position: relative;
-      z-index: 2;
-    }
-
-    .lancamentos-list-scroll {
-      width: 100%;
-      min-width: 0;
-      padding-bottom: calc(var(--nav-height) + 24px);
-    }
-
-    .lista {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      width: 100%;
-      min-width: 0;
-    }
-
-    .lista-limitada {
-      max-height: 340px;
-      overflow-y: auto;
-      overflow-x: hidden;
-      padding-right: 4px;
-      scrollbar-width: thin;
-      scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
-    }
-
-    .lista-limitada::-webkit-scrollbar {
-      width: 5px;
-    }
-
-    .lista-limitada::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .lista-limitada::-webkit-scrollbar-thumb {
-      background: rgba(148, 163, 184, 0.4);
-      border-radius: 10px;
-    }
-
-    .lista-limitada::-webkit-scrollbar-thumb:hover {
-      background: rgba(148, 163, 184, 0.65);
-    }
-
-    .item-row {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      align-items: stretch;
-      width: 100%;
-      min-width: 0;
-      padding: 16px;
-      background: var(--card-bg);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius-md);
-      transition: border-color 0.2s ease;
-    }
-
-    .item-row:hover {
+    .link-voltar:hover {
+      background: var(--bg-surface-hover);
       border-color: var(--card-border-hover);
     }
 
-    @media (min-width: 640px) {
-      .item-row {
-        flex-direction: row;
-        align-items: center;
-        justify-content: space-between;
-      }
+    .input-grid {
+      display: grid; grid-template-columns: 1fr; gap: 14px;
+      background: var(--bg-surface); backdrop-filter: blur(16px);
+      padding: 22px; border-radius: var(--radius-lg);
+      margin-bottom: 22px; border: 1px solid var(--card-border);
+      box-shadow: var(--shadow-glow);
+      scroll-margin-top: 20px;
     }
-
-    .item-info {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      min-width: 0;
+    @media (min-width: 768px) {
+      .input-grid { grid-template-columns: repeat(2, 1fr); }
+      .input-grid .btn-salvar { grid-column: 1 / -1; }
     }
-
-    .item-descricao {
-      font-weight: 700;
-      font-size: 0.95rem;
-    }
-
-    .item-categoria {
-      font-size: 0.68rem;
-      color: var(--text-secondary);
-      font-weight: 600;
-    }
-
-    .item-linha-central {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-
-    @media (min-width: 640px) {
-      .item-linha-central {
-        flex: 1;
-        padding: 0 16px;
-      }
-    }
-
-    .badge {
-      padding: 5px 12px;
-      border-radius: 20px;
-      font-size: 0.68rem;
-      font-weight: 800;
-      text-align: center;
-      letter-spacing: 0.4px;
-      white-space: nowrap;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .status-recebido { background: rgba(6, 95, 70, 0.5); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
-    .status-pago { background: rgba(30, 58, 138, 0.5); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.3); }
-    .status-pendente { background: rgba(146, 64, 14, 0.5); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3); }
-    .status-reserva { background: rgba(37, 99, 235, 0.18); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.3); }
-    .status-investimento { background: rgba(16, 185, 129, 0.18); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
-    .status-saida-reserva { background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
-    .status-saida-investimento { background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
-
-    .valor {
-      font-weight: 800;
-      font-size: 0.95rem;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      white-space: nowrap;
-    }
-
-    .valor-entrada { color: #2ce444; }
-    .valor-saida { color: #ec0a0a; }
-    .valor-reserva { color: #60a5fa; }
-    .valor-investimento { color: #34d399; }
-    .valor-saida-reserva { color: #f87171; }
-    .valor-saida-investimento { color: #f87171; }
-
-    .mono {
-      font-family: 'Consolas', monospace;
-      font-size: 0.78rem;
-      color: var(--text-secondary);
-    }
-
-    .acoes-row {
-      display: flex;
-      gap: 8px;
-      justify-content: flex-end;
-    }
-
-    .btn-icon {
-      background: rgba(238, 242, 247, 0.5);
+    .input-grid input,
+    .input-grid select {
+      background: rgba(11, 14, 22, 0.95);
       border: 1px solid var(--card-border);
-      color: white;
-      width: 34px;
-      height: 34px;
       border-radius: var(--radius-sm);
-      cursor: pointer;
+      padding: 14px 16px; color: var(--text-primary);
+      font-size: 0.95rem; font-weight: 600;
+      outline: none; width: 100%;
+    }
+    .input-grid input:focus,
+    .input-grid select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.25);
+    }
+    .btn-salvar {
+      grid-column: 1 / -1; padding: 16px; border: none;
+      border-radius: var(--radius-sm); cursor: pointer;
+      color: white; font-weight: 900; font-size: 1rem;
+      background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+      box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+      transition: all 0.2s ease;
+    }
+    .btn-salvar:hover { opacity: 0.95; transform: translateY(-1px); }
+
+    .lancamentos-view {
+      display: flex; flex-direction: column; width: 100%; min-width: 0;
+    }
+
+    .lista-scroll {
+      display: flex; flex-direction: column; gap: 14px;
+      max-height: 560px; overflow-y: auto; overflow-x: hidden;
+      padding: 4px 6px 4px 4px; scroll-behavior: smooth;
+      -webkit-overflow-scrolling: touch;
+    }
+    .lista-scroll::-webkit-scrollbar { width: 8px; }
+    .lista-scroll::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.03); border-radius: 4px;
+    }
+    .lista-scroll::-webkit-scrollbar-thumb {
+      background: rgba(139, 92, 246, 0.5); border-radius: 4px;
+    }
+    .lista-scroll::-webkit-scrollbar-thumb:hover {
+      background: rgba(139, 92, 246, 0.75);
+    }
+
+    .card-lancamento {
+      position: relative; display: flex; flex-direction: column; gap: 14px;
+      width: 100%; padding: 18px 20px;
+      background: linear-gradient(145deg, rgba(22, 27, 40, 0.9), rgba(13, 17, 26, 0.98));
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border); border-radius: var(--radius-lg);
+      box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      transition: all 0.25s ease; overflow: hidden; flex-shrink: 0;
+    }
+    .card-lancamento::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+      background: linear-gradient(90deg, transparent, var(--accent, var(--primary)), transparent);
+    }
+    .card-lancamento:hover {
+      border-color: var(--card-border-hover); transform: translateY(-2px);
+      box-shadow: 0 16px 40px -8px rgba(139, 92, 246, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    .card-entrada        { --accent: #34d399; }
+    .card-saida          { --accent: #f87171; }
+    .card-reserva        { --accent: #c084fc; }
+    .card-investimento   { --accent: #34d399; }
+    .card-saida-reserva  { --accent: #f87171; }
+    .card-saida-investimento { --accent: #f87171; }
+
+    .card-header {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .card-badge {
+      padding: 6px 14px; border-radius: 20px; font-size: 0.68rem;
+      font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase;
+      white-space: nowrap; display: inline-flex; align-items: center; gap: 6px;
+    }
+    .badge-entrada        { background: rgba(16, 185, 129, 0.18); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.4); }
+    .badge-saida          { background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.4); }
+    .badge-pendente       { background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.4); }
+    .badge-reserva        { background: rgba(139, 92, 246, 0.18); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.4); }
+    .badge-investimento   { background: rgba(16, 185, 129, 0.18); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.4); }
+    .badge-saida-reserva,
+    .badge-saida-investimento { background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.4); }
+
+    .card-data {
+      font-family: 'JetBrains Mono', 'Consolas', monospace;
+      font-size: 0.72rem; font-weight: 700; color: var(--text-muted);
+      white-space: nowrap; flex-shrink: 0;
+    }
+
+    .card-body {
+      display: flex; align-items: flex-end; justify-content: space-between; gap: 14px;
+    }
+    .card-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+    .card-descricao {
+      font-size: 1.15rem; font-weight: 900; color: var(--text-primary);
+      letter-spacing: -0.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.2;
+    }
+    .card-categoria {
+      font-size: 0.75rem; font-weight: 800; color: var(--text-secondary);
+      text-transform: uppercase; letter-spacing: 0.6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .card-valor {
+      font-size: 1.5rem; font-weight: 900; letter-spacing: -0.6px;
+      white-space: nowrap; flex-shrink: 0; line-height: 1.1;
+    }
+    .valor-entrada, .valor-investimento { color: #34d399; }
+    .valor-saida, .valor-saida-reserva, .valor-saida-investimento { color: #f87171; }
+    .valor-reserva { color: #c084fc; }
+
+    .card-footer {
+      display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+      padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .btn-acao {
+      display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px;
+      border-radius: var(--radius-sm); border: 1px solid var(--card-border);
+      background: rgba(255, 255, 255, 0.04); color: var(--text-primary);
+      font-size: 0.78rem; font-weight: 800; cursor: pointer; transition: all 0.2s ease;
+    }
+    .btn-acao svg { width: 14px; height: 14px; flex-shrink: 0; }
+    .btn-acao.editar:hover {
+      color: #60a5fa; border-color: rgba(96, 165, 250, 0.5); background: rgba(59, 130, 246, 0.12); transform: translateY(-1px);
+    }
+    .btn-acao.excluir:hover {
+      color: #f87171; border-color: rgba(248, 113, 113, 0.5); background: rgba(239, 68, 68, 0.12); transform: translateY(-1px);
+    }
+
+    .vazio {
+      text-align: center; padding: 40px 20px; color: var(--text-secondary);
+      background: var(--bg-surface); border-radius: var(--radius-md);
+      border: 1px dashed var(--card-border); font-size: 0.95rem; font-weight: 700;
+    }
+
+    .svg-icon { width: 22px; height: 22px; display: block; flex-shrink: 0; }
+
+    .analytics-cards-grid {
+      display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 22px; width: 100%; min-width: 0;
+    }
+    @media (min-width: 640px) {
+      .analytics-cards-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    .analytics-metric-card {
+      background: var(--bg-surface); backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border); border-radius: var(--radius-md);
+      padding: 20px; display: flex; flex-direction: column; gap: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); min-width: 0; overflow: hidden;
+    }
+    .analytics-metric-label {
+      font-size: 0.78rem; font-weight: 800; letter-spacing: 0.8px;
+      text-transform: uppercase; color: var(--text-secondary); line-height: 1.2;
+    }
+    .analytics-metric-desc { font-size: 0.73rem; color: var(--text-muted); line-height: 1.3; margin-bottom: 2px; }
+    .analytics-metric-value {
+      font-size: clamp(1.15rem, 5vw, 1.65rem); font-weight: 900; letter-spacing: -0.5px;
+      word-break: break-word; overflow-wrap: break-word;
+    }
+
+    .historico-subtitulo { font-size: 0.82rem; color: var(--text-muted); margin: -8px 0 16px 0; line-height: 1.4; }
+    .historico-lista { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; padding-right: 4px; -webkit-overflow-scrolling: touch; }
+    .historico-item {
+      display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+      border-radius: var(--radius-sm); background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border); transition: all 0.15s ease; min-width: 0;
+    }
+    .historico-item:hover { background: rgba(255, 255, 255, 0.06); border-color: var(--card-border-hover); }
+    .historico-icone { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .historico-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+    .historico-desc { font-size: 0.92rem; font-weight: 800; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .historico-meta { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .historico-valor { font-size: 0.92rem; font-weight: 900; white-space: nowrap; flex-shrink: 0; }
+    .historico-vazio {
+      text-align: center; padding: 32px 16px; color: var(--text-secondary);
+      font-weight: 700; font-size: 0.9rem; background: rgba(255, 255, 255, 0.03);
+      border: 1px dashed var(--card-border); border-radius: var(--radius-sm);
+    }
+
+    /* Estilos dos Modais (Calculadora e Notas) */
+    .calc-modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.2s ease, transform 0.15s ease;
+      background-color: rgba(7, 9, 14, 0.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      padding: 16px;
     }
 
-    .btn-icon:hover { transform: translateY(-1px); }
-    .btn-icon.editar:hover { background: rgba(59, 130, 246, 0.5); }
-    .btn-icon.excluir { background: rgba(127, 29, 29, 0.6); }
-    .btn-icon.excluir:hover { background: rgba(185, 28, 28, 0.8); }
-
-    .vazio {
-      text-align: center;
-      padding: 40px 20px;
-      color: var(--text-secondary);
-      background: var(--card-bg);
-      border-radius: var(--radius-md);
-      border: 1px dashed var(--card-border);
+    .calc-modal-container {
+      width: 100%;
+      max-width: 320px;
+      background: #0f141e;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 24px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+      overflow: hidden;
+      animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    @media (max-width: 639px) {
-      .app-container.lancamentos-ativo {
-        height: 100dvh;
-        min-height: 100dvh;
-        max-height: 100dvh;
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-        padding-bottom: 0;
-      }
-      .app-container.lancamentos-ativo .topbar { flex: 0 0 auto; }
-      .app-container.lancamentos-ativo .lancamentos-view { flex: 1 1 auto; min-height: 0; height: 100%; overflow: hidden; }
-      .app-container.lancamentos-ativo .lancamentos-form-fixed { flex: 0 0 auto; width: 100%; min-width: 0; background: var(--bg-base); padding-bottom: 8px; }
-      .app-container.lancamentos-ativo .lancamentos-list-scroll { flex: 1 1 auto; width: 100%; min-height: 0; height: 100%; overflow-y: auto; overflow-x: hidden; padding-right: 0; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
-      .app-container.lancamentos-ativo .lista-limitada { width: 100%; max-width: 100%; max-height: none; height: auto; overflow: visible; padding-right: 0; }
-      .app-container.lancamentos-ativo .item-row { width: 100%; max-width: 100%; min-width: 0; padding: 14px; }
-      .categoria-corpo { flex-direction: column; align-items: center; }
+    .notas-modal-container {
+      width: 100%;
+      max-width: 600px;
+      max-height: 85vh;
+      background: #0f141e;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 24px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
+
+    @keyframes scaleIn {
+      from { transform: scale(0.92); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .calc-header-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      background: #07090e;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .calc-title-text {
+      font-size: 0.85rem;
+      font-weight: 900;
+      color: #34d399;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .calc-close-btn {
+      background: #ef4444;
+      color: #ffffff;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .calc-close-btn:hover {
+      background: #dc2626;
+      transform: scale(1.05);
+    }
+
+    /* Estilos internos do Bloco de Notas no Modal */
+    .notas-body-scroll {
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .nota-form-card {
+      background: rgba(18, 22, 33, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .input-nota {
+      background: rgba(11, 14, 22, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      padding: 12px 14px;
+      color: #ffffff;
+      font-size: 0.9rem;
+      font-weight: 600;
+      outline: none;
+      width: 100%;
+    }
+    .input-nota:focus {
+      border-color: #8b5cf6;
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.25);
+    }
+    textarea.input-nota { resize: vertical; min-height: 80px; }
+    .btn-salvar-nota {
+      padding: 12px; border: none; border-radius: 10px; cursor: pointer;
+      color: white; font-weight: 900; font-size: 0.9rem;
+      background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+      transition: all 0.2s;
+    }
+    .btn-salvar-nota:hover { opacity: 0.95; transform: translateY(-1px); }
+    .notas-grid {
+      display: grid; grid-template-columns: 1fr; gap: 12px;
+    }
+    @media(min-width: 520px) {
+      .notas-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    .nota-card-item {
+      position: relative;
+      background: linear-gradient(145deg, rgba(22, 27, 40, 0.9), rgba(13, 17, 26, 0.98));
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px; padding: 14px;
+      display: flex; flex-direction: column; gap: 8px; overflow: hidden;
+    }
+    .nota-card-item::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+      background: var(--cor-destaque, #8b5cf6);
+    }
+    .nota-card-titulo { font-size: 1rem; font-weight: 900; color: #fff; margin: 0; word-break: break-word; }
+    .nota-card-texto { font-size: 0.85rem; color: #cbd5e1; white-space: pre-wrap; word-break: break-word; margin: 0; flex: 1; line-height: 1.3; }
+    .nota-card-footer {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 6px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 0.68rem; color: #94a3b8;
+    }
+    .nota-acoes { display: flex; gap: 6px; }
+    .btn-acao-n {
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+      color: #cbd5e1; padding: 3px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; cursor: pointer;
+    }
+    .btn-acao-n.editar:hover { color: #60a5fa; border-color: rgba(96,165,250,0.4); background: rgba(59,130,246,0.15); }
+    .btn-acao-n.excluir:hover { color: #f87171; border-color: rgba(248,113,113,0.4); background: rgba(239,68,68,0.15); }
   `],
   template: `
-    <div
-      class="app-container"
-      [class.lancamentos-ativo]="viewAtual() === 'lancamentos'"
-    >
+    <div class="app-container">
       <div class="topbar">
-        <button
-          class="btn-hamburguer"
-          (click)="alternarMenu()"
-          [attr.aria-expanded]="menuAberto()"
-          aria-controls="drawer-fluxnexis"
-          aria-label="Abrir menu"
-        >
-          <span></span>
-          <span></span>
-          <span></span>
-        </button>
-
-        <h1 class="flux-title">
-          FluxNexis
-        </h1>
+        <div class="brand-section">
+          <button
+            class="btn-hamburguer"
+            (click)="alternarMenu()"
+            [attr.aria-expanded]="menuAberto()"
+            aria-label="Abrir menu"
+          >
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
+          <div class="brand-title-wrap">
+            <div class="flux-logo-icon">
+              <svg width="22" height="22" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 8C6 6.89543 6.89543 6 8 6H16C20.4183 6 24 9.58172 24 14C24 18.4183 20.4183 22 16 22H10C7.79086 22 6 20.2091 6 18V8Z" stroke="url(#paint0_linear)" stroke-width="3" stroke-linejoin="round"/>
+                <path d="M12 16H22C25.3137 16 28 18.6863 28 22C28 25.3137 25.3137 28 22 28H14C11.7909 28 10 26.2091 10 24V22" stroke="url(#paint1_linear)" stroke-width="3" stroke-linecap="round"/>
+                <circle cx="16" cy="14" r="3" fill="#ffffff"/>
+                <defs>
+                  <linearGradient id="paint0_linear" x1="6" y1="6" x2="24" y2="22" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#c084fc"/>
+                    <stop offset="1" stop-color="#38bdf8"/>
+                  </linearGradient>
+                  <linearGradient id="paint1_linear" x1="10" y1="16" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#38bdf8"/>
+                    <stop offset="1" stop-color="#34d399"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+            <h1 class="flux-title">FluxNexis</h1>
+          </div>
+        </div>
       </div>
 
-      <nav
-        class="drawer"
-        id="drawer-fluxnexis"
-        [class.aberto]="menuAberto()"
-        role="navigation"
-        aria-label="Menu principal"
-      >
+      <nav class="drawer" [class.aberto]="menuAberto()" role="navigation" aria-label="Menu principal">
         <div class="drawer-header">
-          <span class="drawer-titulo">
-            FluxNexis
-          </span>
-
-          <button
-            class="btn-fechar-drawer"
-            (click)="fecharMenu()"
-            aria-label="Fechar menu"
-          >
-            ✕
+          <span class="drawer-titulo">Menu FluxNexis</span>
+          <button class="btn-fechar-drawer" (click)="fecharMenu()" aria-label="Fechar menu">
+            <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
         </div>
 
-        <p class="secao-titulo">
-          Ações
-        </p>
+        <p class="secao-titulo">Ferramentas & Ações</p>
 
-        <button
-          class="acao-item acao-pdf"
-          (click)="gerarPDF()"
-          [disabled]="operacaoEmAndamento"
-        >
-          📄 Exportar PDF
+        <!-- ATALHO DA CALCULADORA NO MENU -->
+        <button class="acao-item" (click)="abrirCalculadora()">
+          <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><line x1="8" y1="6" x2="16" y2="6"></line><line x1="8" y1="10" x2="10" y2="10"></line><line x1="14" y1="10" x2="16" y2="10"></line><line x1="8" y1="14" x2="10" y2="14"></line><line x1="14" y1="14" x2="16" y2="14"></line><line x1="8" y1="18" x2="16" y2="18"></line></svg>
+          Calculadora Rápida
         </button>
 
-        <button
-          class="acao-item acao-excel"
-          (click)="exportarExcel()"
-          [disabled]="operacaoEmAndamento"
-        >
-          📊 Exportar Excel
+        <!-- ATALHO DO BLOCO DE NOTAS NO MENU -->
+        <button class="acao-item" (click)="abrirNotasModal()">
+          <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          Bloco de Notas
         </button>
 
-        <button
-          class="acao-item acao-backup"
-          (click)="exportarBackup()"
-          [disabled]="operacaoEmAndamento"
-        >
-          💾 Fazer Backup
+        <p class="secao-titulo">Relatórios & Exportação</p>
+
+        <button class="acao-item" (click)="gerarPDF()" [disabled]="operacaoEmAndamento">
+          <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+          Exportar Relatório PDF
         </button>
 
-        <input
-          #inputBackup
-          type="file"
-          accept=".json"
-          hidden
-          (change)="importarBackup($event)"
-        />
-
-        <button
-          class="acao-item acao-restore"
-          (click)="inputBackup.click()"
-          [disabled]="operacaoEmAndamento"
-        >
-          🔄 Restaurar Backup
+        <button class="acao-item" (click)="exportarExcel()" [disabled]="operacaoEmAndamento">
+          <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line><line x1="9" y1="9" x2="9" y2="21"></line></svg>
+          Exportar Planilha Excel
         </button>
 
-        <div class="drawer-rodape">
-          FluxNexis · Controle Financeiro
-        </div>
+        <button class="acao-item" (click)="exportarBackup()" [disabled]="operacaoEmAndamento">
+          <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+          Fazer Backup Seguro
+        </button>
+
+        <input #inputBackup type="file" accept=".json" hidden (change)="importarBackup($event)" />
+        <button class="acao-item" (click)="inputBackup.click()" [disabled]="operacaoEmAndamento">
+          <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.65-5.65"></path></svg>
+          Restaurar Dados
+        </button>
+
+        <div class="drawer-rodape">FluxNexis · Arquitetura Moderna DX</div>
       </nav>
 
-      <div
-        class="backdrop-drawer"
-        *ngIf="menuAberto()"
-        (click)="fecharMenu()"
-      ></div>
+      <div class="backdrop-drawer" *ngIf="menuAberto()" (click)="fecharMenu()"></div>
 
       <ng-container *ngIf="viewAtual() === 'inicio'">
         <div class="mes-selector-box">
           <span class="calendar-icon">
-            <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="3"></rect>
-              <line x1="16" y1="2" x2="16" y2="6"></line>
-              <line x1="8" y1="2" x2="8" y2="6"></line>
-              <line x1="3" y1="10" x2="21" y2="10"></line>
-            </svg>
+            <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="3"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
           </span>
-
-          <input
-            type="month"
-            [ngModel]="mesAtual"
-            (ngModelChange)="selecionarMes($event)"
-            class="mes-input"
-          />
+          <input type="month" [ngModel]="mesAtual" (ngModelChange)="selecionarMes($event)" class="mes-input" />
         </div>
 
-        <div class="card-status-hero">
-          <div
-            class="status-icone-wrap"
-            [class.tranquilo]="statusFinanceiro().nivel === 'tranquilo'"
-            [class.alerta]="statusFinanceiro().nivel === 'alerta'"
-            [class.critico]="statusFinanceiro().nivel === 'critico'"
-          >
-            <svg
-              class="svg-icon grande"
-              viewBox="0 0 24 24"
-              fill="none"
-              [attr.stroke]="statusFinanceiro().cor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M3 3v18h18"></path>
+        <div class="hero-balance-card">
+          <div class="hero-balance-content">
+            <div class="wallet-icon-box">
+              <svg style="width: 28px; height: 28px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
+            </div>
+            <div>
+              <span class="hero-subtitle">Saldo Líquido Disponível (No Mês)</span>
+              <div class="hero-balance-value">R$ {{ formatarMoeda(saldoReal()) }}</div>
+            </div>
+          </div>
+        </div>
 
-              <rect
-                x="7"
-                y="13"
-                width="3"
-                height="5"
-                [attr.fill]="statusFinanceiro().cor"
-                stroke="none"
-              ></rect>
+        <div [style.background-color]="statusConfig().bgColor" [style.border-color]="statusConfig().borderColor" class="status-financeiro-card">
+          <div class="status-info-wrap">
+            <div class="status-icon-box">
+              <svg style="width: 22px; height: 22px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+            </div>
+            <div>
+              <span class="status-label-top">Diagnóstico Financeiro</span>
+              <span [style.color]="statusConfig().textColor" class="status-value-text">{{ statusConfig().label }}</span>
+            </div>
+          </div>
+          <span class="status-dot-indicator" [style.background-color]="statusConfig().dotColor"></span>
+        </div>
 
-              <rect
-                x="12"
-                y="9"
-                width="3"
-                height="9"
-                [attr.fill]="statusFinanceiro().cor"
-                stroke="none"
-              ></rect>
+        <!-- BOTÕES DE ATALHOS RÁPIDOS NA TELA INICIAL -->
+        <div class="quick-actions-grid">
+          <button class="quick-action-btn" (click)="irParaLancamentos()">
+            <div class="quick-action-icon">
+              <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </div>
+            <span class="quick-action-label">Lançamento</span>
+          </button>
 
-              <rect
-                x="17"
-                y="5"
-                width="3"
-                height="13"
-                [attr.fill]="statusFinanceiro().cor"
-                stroke="none"
-              ></rect>
+          <button class="quick-action-btn" (click)="irParaAnalytics()">
+            <div class="quick-action-icon">
+              <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+            </div>
+            <span class="quick-action-label">Analytics</span>
+          </button>
+
+          <button class="quick-action-btn" (click)="abrirCalculadora()">
+            <div class="quick-action-icon">
+              <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><line x1="8" y1="6" x2="16" y2="6"></line><line x1="8" y1="10" x2="10" y2="10"></line></svg>
+            </div>
+            <span class="quick-action-label">Calculadora</span>
+          </button>
+
+          <button class="quick-action-btn" (click)="abrirNotasModal()">
+            <div class="quick-action-icon">
+              <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+            </div>
+            <span class="quick-action-label">Notas</span>
+          </button>
+        </div>
+
+        <div class="portfolio-carousel-container">
+          <button class="carousel-btn" (click)="cardAnterior()" aria-label="Anterior">
+            <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+
+          <div class="portfolio-carousel-track">
+            <div class="portfolio-carousel-inner" [style.transform]="'translateX(-' + (indiceCardAtual * 100) + '%)'">
+
+              <!-- ENTRADAS -->
+              <div class="portfolio-subcard-lg" style="--card-accent: #34d399;">
+                <div class="subcard-header-lg">
+                  <span class="subcard-icone" style="background: rgba(52, 211, 153, 0.15); color: #34d399; border-color: rgba(52, 211, 153, 0.35);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 17 17 7"></polyline><polyline points="9 7 17 7 17 15"></polyline></svg>
+                  </span>
+                  <span class="subcard-label-lg">Entradas Recebidas</span>
+                </div>
+                <span class="subcard-valor-lg" style="color: #34d399;">R$ {{ formatarMoeda(totalEntradas()) }}</span>
+              </div>
+
+              <!-- GASTOS -->
+              <div class="portfolio-subcard-lg" style="--card-accent: #f87171;">
+                <div class="subcard-header-lg">
+                  <span class="subcard-icone" style="background: rgba(248, 113, 113, 0.15); color: #f87171; border-color: rgba(248, 113, 113, 0.35);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 7 7 17"></polyline><polyline points="15 17 7 17 7 9"></polyline></svg>
+                  </span>
+                  <span class="subcard-label-lg">Gastos</span>
+                </div>
+                <span class="subcard-valor-lg" style="color: #f87171;">R$ {{ formatarMoeda(totalGastosMes()) }}</span>
+              </div>
+
+              <!-- RESERVA -->
+              <div class="portfolio-subcard-lg" style="--card-accent: #c084fc;">
+                <div class="subcard-header-lg">
+                  <span class="subcard-icone" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; border-color: rgba(192, 132, 252, 0.35);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 9-8 10-4.5-1-8-5-8-10V7l8-4z"></path></svg>
+                  </span>
+                  <span class="subcard-label-lg">Reserva</span>
+                </div>
+                <span class="subcard-valor-lg" style="color: #c084fc;">R$ {{ formatarMoeda(totalReservaMes()) }}</span>
+              </div>
+
+              <!-- INVESTIMENTOS -->
+              <div class="portfolio-subcard-lg" style="--card-accent: #38bdf8;">
+                <div class="subcard-header-lg">
+                  <span class="subcard-icone" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.35);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"></polyline></svg>
+                  </span>
+                  <span class="subcard-label-lg">Investimentos</span>
+                </div>
+                <span class="subcard-valor-lg" style="color: #38bdf8;">R$ {{ formatarMoeda(totalInvestimentoMes()) }}</span>
+              </div>
+
+            </div>
+          </div>
+
+          <button class="carousel-btn" (click)="proximoCard()" aria-label="Próximo">
+            <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+        </div>
+
+        <div class="carousel-indicators">
+          <button *ngFor="let dot of [0, 1, 2, 3]" class="indicator-dot" [class.ativo]="indiceCardAtual === dot" (click)="irParaCard(dot)"></button>
+        </div>
+
+        <div class="card-modulo">
+          <strong class="card-titulo">
+            <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+            Evolução Diária do Saldo
+          </strong>
+          <div class="sparkline-wrap">
+            <svg class="sparkline-svg" viewBox="0 0 680 95" preserveAspectRatio="none">
+              <path [attr.d]="evolucaoSaldoMensal().area" fill="rgba(139, 92, 246, 0.2)" stroke="none"></path>
+              <path [attr.d]="evolucaoSaldoMensal().linha" fill="none" stroke="#c084fc" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
             </svg>
           </div>
+        </div>
+      </ng-container>
 
-          <div class="status-texto-wrap">
-            <span class="status-eyebrow">
-              Status financeiro do mês
-            </span>
+      <ng-container *ngIf="viewAtual() === 'analytics'">
+        <div class="cabecalho-pagina">
+          <h2 class="titulo-pagina">Balanço Geral & Analytics</h2>
+          <button class="link-voltar" (click)="irParaInicio()">Voltar</button>
+        </div>
 
-            <strong
-              class="status-valor"
-              [style.color]="statusFinanceiro().cor"
-            >
-              {{ statusFinanceiro().texto }}
-            </strong>
+        <div class="analytics-cards-grid">
+          <div class="analytics-metric-card">
+            <span class="analytics-metric-label">Total de Lançamentos</span>
+            <span class="analytics-metric-desc">Quantidade total de registos financeiros.</span>
+            <span class="analytics-metric-value" style="color: #c084fc;">{{ todosLancamentos().length }}</span>
+          </div>
+          <div class="analytics-metric-card">
+            <span class="analytics-metric-label">Balanço Acumulado Geral</span>
+            <span class="analytics-metric-desc">Resultado financeiro total acumulado.</span>
+            <span class="analytics-metric-value" [style.color]="balancoGlobal() >= 0 ? '#34d399' : '#f87171'">R$ {{ formatarMoeda(balancoGlobal()) }}</span>
           </div>
         </div>
 
-        <div class="resumo-mes-card">
-          <strong class="resumo-mes-titulo">
-            Resumo do Mês
+        <div class="card-modulo">
+          <strong class="card-titulo">
+            <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+            Análise por Categoria e Tipo
           </strong>
 
-          <div class="resumo-colunas">
-            <div class="resumo-coluna">
-              <div class="resumo-icone saldo">
-                <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="2" y="7" width="20" height="14" rx="2"></rect>
-                  <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"></path>
-                  <line x1="2" y1="12" x2="22" y2="12"></line>
-                </svg>
-              </div>
-
-              <span class="resumo-label">
-                Saldo Real
-              </span>
-
-              <strong
-                class="resumo-valor"
-                [style.color]="saldoReal() >= 0 ? '#34d399' : '#f87171'"
-              >
-                R$ {{ saldoReal().toFixed(2) }}
-              </strong>
-            </div>
-
-            <div class="resumo-coluna">
-              <div class="resumo-icone entradas">
-                <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
-                  <polyline points="17 6 23 6 23 12"></polyline>
-                </svg>
-              </div>
-
-              <span class="resumo-label">
-                Entradas
-              </span>
-
-              <strong class="resumo-valor">
-                R$ {{ totalEntradas().toFixed(2) }}
-              </strong>
-            </div>
-
-            <div class="resumo-coluna">
-              <div class="resumo-icone gastos">
-                <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline>
-                  <polyline points="17 18 23 18 23 12"></polyline>
-                </svg>
-              </div>
-
-              <span class="resumo-label">
-                Gastos
-              </span>
-
-              <strong class="resumo-valor">
-                R$ {{ totalGastosMes().toFixed(2) }}
-              </strong>
-            </div>
-          </div>
-
-          <div class="sparkline-wrap">
-            <svg
-              class="sparkline-svg"
-              viewBox="0 0 680 90"
-              preserveAspectRatio="none"
-            >
-              <defs>
-                <linearGradient id="sparklineArea" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stop-color="#ef4444" stop-opacity="0.35"></stop>
-                  <stop offset="55%" stop-color="#10b981" stop-opacity="0.25"></stop>
-                  <stop offset="100%" stop-color="#10b981" stop-opacity="0.45"></stop>
-                </linearGradient>
-                <linearGradient id="sparklineLinha" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stop-color="#f87171"></stop>
-                  <stop offset="55%" stop-color="#34d399"></stop>
-                  <stop offset="100%" stop-color="#10b981"></stop>
-                </linearGradient>
-              </defs>
-
-              <path
-                [attr.d]="evolucaoSaldoMensal().area"
-                fill="url(#sparklineArea)"
-                stroke="none"
-              ></path>
-
-              <path
-                [attr.d]="evolucaoSaldoMensal().linha"
-                fill="none"
-                stroke="url(#sparklineLinha)"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              ></path>
-            </svg>
-          </div>
-        </div>
-
-        <div class="patrimonio-card">
-          <div class="patrimonio-titulo-row">
-            <strong>
-              Patrimônio e Investimentos
-            </strong>
-
-            <svg
-              class="patrimonio-info-icon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              title="Reserva e investimentos acumulados em todos os meses"
-            >
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="16" x2="12" y2="11"></line>
-              <line x1="12" y1="8" x2="12.01" y2="8"></line>
-            </svg>
-          </div>
-
-          <div class="patrimonio-subcards">
-            <div class="patrimonio-subcard reserva">
-              <div class="patrimonio-subcard-cabecalho">
-                <div class="patrimonio-icone reserva">
-                  <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                  </svg>
-                </div>
-
-                <span class="patrimonio-label">
-                  Reserva acumulada
-                </span>
-              </div>
-
-              <strong class="patrimonio-valor">
-                R$ {{ totalReserva().toFixed(2) }}
-              </strong>
-            </div>
-
-            <div class="patrimonio-subcard investimento">
-              <div class="patrimonio-subcard-cabecalho">
-                <div class="patrimonio-icone investimento">
-                  <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
-                    <polyline points="17 6 23 6 23 12"></polyline>
-                  </svg>
-                </div>
-
-                <span class="patrimonio-label">
-                  Investimentos acumulados
-                </span>
-              </div>
-
-              <strong class="patrimonio-valor">
-                R$ {{ totalInvestimentos().toFixed(2) }}
-              </strong>
-            </div>
-          </div>
-
-          <div class="patrimonio-progress-wrap">
-            <div class="patrimonio-progress-legenda">
-              <span>Economia do mês</span>
-              <span>Gastos do mês</span>
-            </div>
-
-            <div class="patrimonio-progress-track">
-              <div
-                class="patrimonio-progress-fill"
-                [style.width.%]="percentualEconomiaMes()"
-              ></div>
-            </div>
-
-            <p class="patrimonio-progress-texto">
-              R$ {{ economiaMes().toFixed(2) }} / R$ {{ totalGastosMes().toFixed(2) }}
-            </p>
-          </div>
-        </div>
-
-        <div class="analise-card">
-          <div class="analise-cabecalho">
-            <span class="analise-titulo">
-              📊 Análise por Categoria
-            </span>
-          </div>
-
-          <select
-            class="analise-select"
-            [ngModel]="tipoAnaliseSelecionado()"
-            (ngModelChange)="selecionarTipoAnalise($event)"
-          >
-            <option
-              *ngFor="let tipo of tiposParaAnalise"
-              [value]="tipo"
-            >
-              {{ rotuloTipo(tipo) }}
+          <select [ngModel]="tipoAnaliseSelecionado()" (ngModelChange)="tipoAnaliseSelecionado.set($event)" class="analise-select">
+            <option *ngFor="let t of tiposParaAnalise" [value]="t">
+              {{ rotulosTipo[t] || t }}
             </option>
           </select>
 
-          <ng-container *ngIf="analiseTipoAtual() as analise; else analiseVazia">
-            <div class="categoria-corpo">
-              <div class="donut-wrap">
-                <svg class="donut-svg" viewBox="0 0 160 160">
-                  <circle
-                    cx="80"
-                    cy="80"
-                    r="60"
-                    fill="none"
-                    stroke="rgba(255,255,255,0.06)"
-                    stroke-width="20"
-                  ></circle>
-
-                  <g transform="rotate(-90 80 80)">
-                    <circle
-                      *ngFor="let item of analise.itens"
-                      cx="80"
-                      cy="80"
-                      r="60"
-                      fill="none"
-                      stroke-width="20"
-                      [attr.stroke]="item.cor"
-                      [attr.stroke-dasharray]="item.dashArray"
-                      [attr.stroke-dashoffset]="item.dashOffset"
-                    ></circle>
-                  </g>
-                </svg>
-              </div>
-
-              <div class="legend-list">
-                <div
-                  class="legend-item"
-                  *ngFor="let item of analise.itens"
-                >
-                  <span
-                    class="legend-dot"
-                    [style.background]="item.cor"
-                  ></span>
-
-                  <span class="legend-icone" [innerHTML]="item.iconeSvg"></span>
-
-                  <span class="legend-nome">
-                    {{ item.categoria }}
-                  </span>
-
-                  <span class="legend-valor">
-                    R$ {{ item.valor.toFixed(2) }}
-                  </span>
-                </div>
+          <div class="categoria-corpo">
+            <div class="donut-wrap">
+              <svg class="donut-svg" viewBox="0 0 140 140">
+                <circle cx="70" cy="70" r="60" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="16" />
+                <circle
+                  *ngFor="let item of analisePorTipoSelecionado().itens"
+                  cx="70" cy="70" r="60"
+                  fill="none"
+                  [attr.stroke]="item.cor"
+                  stroke-width="16"
+                  [attr.stroke-dasharray]="item.dashArray"
+                  [attr.stroke-dashoffset]="item.dashOffset"
+                  stroke-linecap="round"
+                  transform="rotate(-90 70 70)"
+                  style="transition: stroke-dashoffset 0.5s ease;"
+                />
+              </svg>
+              <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none;">
+                <span style="font-size: 0.68rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">Total</span>
+                <span style="font-size: 0.95rem; font-weight: 900; color: var(--text-primary);">R$ {{ formatarMoeda(analisePorTipoSelecionado().total) }}</span>
               </div>
             </div>
 
-            <div class="categoria-stats">
-              <div class="categoria-stat-box">
-                <span class="categoria-stat-label">
-                  Total ({{ rotuloTipo(tipoAnaliseSelecionado()) }})
-                </span>
-
-                <strong class="categoria-stat-valor">
-                  R$ {{ analise.total.toFixed(2) }}
-                </strong>
-              </div>
-
-              <div class="categoria-stat-box">
-                <span class="categoria-stat-label">
-                  Lançamentos
-                </span>
-
-                <strong class="categoria-stat-valor">
-                  {{ analise.quantidadeTotal }}
-                </strong>
+            <div class="legend-list" *ngIf="analisePorTypeItens().length > 0; else semDadosAnalise">
+              <div *ngFor="let item of analisePorTypeItens()" class="legend-item">
+                <span class="legend-dot" [style.background-color]="item.cor"></span>
+                <span class="legend-nome">{{ item.categoria }} ({{ item.percentual.toFixed(1) }}%)</span>
+                <span class="legend-valor">R$ {{ formatarMoeda(item.valor) }}</span>
               </div>
             </div>
-          </ng-container>
+            <ng-template #semDadosAnalise>
+              <div class="vazio" style="flex: 1; padding: 20px; font-size: 0.85rem;">Nenhum registro para este tipo.</div>
+            </ng-template>
+          </div>
+        </div>
 
-          <ng-template #analiseVazia>
-            <div class="analise-vazia">
-              Nenhum lançamento do tipo "{{ rotuloTipo(tipoAnaliseSelecionado()) }}" neste mês.
+        <div class="card-modulo">
+          <strong class="card-titulo">
+            <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+            Histórico Recente de Lançamentos
+          </strong>
+          <p class="historico-subtitulo">Últimos registros financeiros consolidados no sistema.</p>
+
+          <div class="historico-lista" *ngIf="historicoRecente().length > 0; else historicoVazio">
+            <div *ngFor="let h of historicoRecente()" class="historico-item">
+              <div class="historico-icone" [style.background]="h.tipo === 'entrada' ? 'rgba(52,211,153,0.15)' : (h.tipo === 'reserva' ? 'rgba(192,132,252,0.15)' : 'rgba(248,113,113,0.15)')" [style.color]="h.tipo === 'entrada' ? '#34d399' : (h.tipo === 'reserva' ? '#c084fc' : '#f87171')">
+                <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+              </div>
+              <div class="historico-info">
+                <span class="historico-desc">{{ h.descricao }}</span>
+                <span class="historico-meta">{{ h.categoria }} · {{ h.data | date:'dd/MM/yyyy' }}</span>
+              </div>
+              <span class="historico-valor" [style.color]="h.tipo === 'entrada' ? '#34d399' : (h.tipo === 'reserva' ? '#c084fc' : '#f87171')">
+                {{ h.tipo === 'entrada' ? '+' : '-' }} R$ {{ formatarMoeda(h.valor) }}
+              </span>
             </div>
+          </div>
+          <ng-template #historicoVazio>
+            <div class="historico-vazio">Nenhum histórico recente disponível.</div>
           </ng-template>
-        </div>
-      </ng-container>
-
-      <ng-container *ngIf="viewAtual() === 'relatorio'">
-        <div class="cabecalho-pagina">
-          <h2 class="titulo-pagina">
-            Relatório
-          </h2>
-
-          <button class="link-voltar" (click)="irParaInicio()">
-            Voltar
-          </button>
-        </div>
-
-        <div class="placeholder-view">
-          <span class="placeholder-icone">📈</span>
-
-          <strong class="placeholder-titulo">
-            Relatórios detalhados em breve
-          </strong>
-
-          <p class="placeholder-texto">
-            Comparativos entre meses, projeção de fluxo de caixa e exportação avançada
-            vão entrar aqui. Por ora, use "Exportar PDF" e "Exportar Excel" no menu lateral.
-          </p>
-        </div>
-      </ng-container>
-
-      <ng-container *ngIf="viewAtual() === 'metas'">
-        <div class="cabecalho-pagina">
-          <h2 class="titulo-pagina">
-            Metas
-          </h2>
-
-          <button class="link-voltar" (click)="irParaInicio()">
-            Voltar
-          </button>
-        </div>
-
-        <div class="placeholder-view">
-          <span class="placeholder-icone">🎯</span>
-
-          <strong class="placeholder-titulo">
-            Metas financeiras em breve
-          </strong>
-
-          <p class="placeholder-texto">
-            Defina limites de gasto por categoria e acompanhe metas de reserva e
-            investimento diretamente aqui.
-          </p>
         </div>
       </ng-container>
 
       <ng-container *ngIf="viewAtual() === 'lancamentos'">
         <div class="lancamentos-view">
-          <div
-            class="lancamentos-form-fixed"
-            #formTop
-          >
-            <div class="cabecalho-pagina">
-              <h2 class="titulo-pagina">
-                Meus Lançamentos
-              </h2>
-
-              <button
-                class="link-voltar"
-                (click)="irParaInicio()"
-              >
-                Voltar
-              </button>
-            </div>
-
-            <div class="input-grid">
-              <input
-                [(ngModel)]="novo.descricao"
-                placeholder="Descrição"
-              />
-
-              <input
-                type="number"
-                [(ngModel)]="novo.valorRealizado"
-                placeholder="R$ Valor"
-              />
-
-              <input
-                [(ngModel)]="novo.categoria"
-                placeholder="Categoria"
-              />
-
-              <select
-                [(ngModel)]="novo.tipo"
-              >
-                <option value="entrada">Entrada</option>
-                <option value="saida">Saída</option>
-                <option value="reserva">Reserva</option>
-                <option value="investimento">Investimento</option>
-                <option value="saida-reserva">Saída (Debitar da Reserva)</option>
-                <option value="saida-investimento">Saída (Debitar dos Investimentos)</option>
-              </select>
-
-              <select
-                [(ngModel)]="novo.statusPagamento"
-              >
-                <option value="pago">Pago/Recebido</option>
-                <option value="pendente">Pendente/Aguardando</option>
-              </select>
-
-              <button
-                class="btn-salvar"
-                (click)="salvar()"
-              >
-                {{
-                  editandoId
-                    ? 'Atualizar'
-                    : 'Salvar Lançamento'
-                }}
-              </button>
-            </div>
+          <div class="cabecalho-pagina">
+            <h2 class="titulo-pagina">Gerenciar Lançamentos</h2>
+            <button class="link-voltar" (click)="irParaInicio()">Voltar</button>
           </div>
 
-          <div class="lancamentos-list-scroll">
+          <div class="input-grid" #formTop>
+            <input [(ngModel)]="novo.descricao" placeholder="Descrição (Ex: Supermercado, Aluguel...)" />
+            <input
+              type="text"
+              inputmode="decimal"
+              [ngModel]="novoValorTexto"
+              (ngModelChange)="onValorChange($event)"
+              placeholder="Valor (R$)"
+            />
+            
+            <!-- CAMPO DE CATEGORIA COM DATALIST (PERMITE SELECIONAR PREDEFINIDAS OU DIGITAR/EDITAR) -->
+            <input
+              list="categorias-predefinidas"
+              [(ngModel)]="novo.categoria"
+              placeholder="Categoria (Selecione ou digite...)"
+            />
+            <datalist id="categorias-predefinidas">
+              <option *ngFor="let cat of categoriasPadrao" [value]="cat"></option>
+            </datalist>
+
+            <select [(ngModel)]="novo.tipo">
+              <option value="entrada">Entrada (Receita)</option>
+              <option value="saida">Saída (Despesa)</option>
+              <option value="reserva">Reserva</option>
+              <option value="investimento">Investimento</option>
+              <option value="saida-reserva">Saída (Da Reserva)</option>
+              <option value="saida-investimento">Saída (Dos Investimentos)</option>
+            </select>
+            <select [(ngModel)]="novo.statusPagamento">
+              <option value="pago">Pago / Recebido</option>
+              <option value="pendente">Pendente / Aguardando</option>
+            </select>
+            <button class="btn-salvar" (click)="salvar()">
+              {{ editandoId ? 'Atualizar Lançamento' : 'Salvar Novo Lançamento' }}
+            </button>
+          </div>
+
+          <div class="lista-scroll" *ngIf="lancamentos().length > 0; else listaVaziaPagina">
             <div
-              class="lista lista-limitada"
-              *ngIf="
-                lancamentos().length > 0;
-                else listaVaziaPagina
-              "
+              *ngFor="let item of lancamentos()"
+              class="card-lancamento"
+              [ngClass]="{
+                'card-entrada': item.tipo === 'entrada',
+                'card-saida': item.tipo === 'saida',
+                'card-reserva': item.tipo === 'reserva',
+                'card-investimento': item.tipo === 'investimento',
+                'card-saida-reserva': item.tipo === 'saida-reserva',
+                'card-saida-investimento': item.tipo === 'saida-investimento'
+              }"
             >
-              <div
-                *ngFor="let item of lancamentos()"
-                class="item-row"
-              >
-                <div class="item-info">
-                  <span class="item-descricao">
-                    {{ item.descricao }}
-                  </span>
-
-                  <span class="item-categoria">
-                    Categoria:
-                    {{ item.categoria || 'Geral' }}
-                  </span>
-
-                  <span class="mono">
-                    {{
-                      item.data
-                        | date:'dd/MM/yyyy HH:mm'
-                    }}
-                  </span>
+              <div class="card-header">
+                <span class="card-badge">{{ item.statusPagamento === 'pendente' ? 'PENDENTE' : (item.tipo | uppercase) }}</span>
+                <span class="card-data">{{ item.data | date:'dd/MM/yyyy HH:mm' }}</span>
+              </div>
+              <div class="card-body">
+                <div class="card-info">
+                  <span class="card-descricao">{{ item.descricao }}</span>
+                  <span class="card-categoria">{{ item.categoria || 'Geral' }}</span>
                 </div>
-
-                <div class="item-linha-central">
-                  <span
-                    class="badge"
-                    [ngClass]="{
-                      'status-recebido': item.statusPagamento === 'pago' && item.tipo === 'entrada',
-                      'status-pago': item.statusPagamento === 'pago' && item.tipo === 'saida',
-                      'status-pendente': item.statusPagamento === 'pendente',
-                      'status-reserva': item.statusPagamento === 'pago' && item.tipo === 'reserva',
-                      'status-investimento': item.statusPagamento === 'pago' && item.tipo === 'investimento',
-                      'status-saida-reserva': item.statusPagamento === 'pago' && item.tipo === 'saida-reserva',
-                      'status-saida-investimento': item.statusPagamento === 'pago' && item.tipo === 'saida-investimento'
-                    }"
-                  >
-                    {{
-                      item.statusPagamento === 'pendente'
-                        ? '⏳ PENDENTE'
-                        : item.tipo === 'entrada'
-                          ? '✅ RECEBIDO'
-                          : item.tipo === 'saida'
-                            ? '💰 PAGO'
-                            : item.tipo === 'reserva'
-                              ? '🛡️ RESERVA'
-                              : item.tipo === 'investimento'
-                                ? '📈 INVESTIMENTO'
-                                : item.tipo === 'saida-reserva'
-                                  ? '🛡️➖ SAÍDA RESERVA'
-                                  : '📈➖ SAÍDA INVEST.'
-                    }}
-                  </span>
-
-                  <span
-                    class="valor"
-                    [ngClass]="{
-                      'valor-entrada': item.tipo === 'entrada',
-                      'valor-saida': item.tipo === 'saida',
-                      'valor-reserva': item.tipo === 'reserva',
-                      'valor-investimento': item.tipo === 'investimento',
-                      'valor-saida-reserva': item.tipo === 'saida-reserva',
-                      'valor-saida-investimento': item.tipo === 'saida-investimento'
-                    }"
-                  >
-                    R$ {{ item.valorRealizado.toFixed(2) }}
-                  </span>
-                </div>
-
-                <div class="acoes-row">
-                  <button
-                    class="btn-icon editar"
-                    (click)="preencherEdicao(item)"
-                    title="Editar"
-                  >
-                    ✎
-                  </button>
-
-                  <button
-                    class="btn-icon excluir"
-                    (click)="excluir(item.id!)"
-                    title="Excluir"
-                  >
-                    ✕
-                  </button>
-                </div>
+                <span class="card-valor" [ngClass]="{
+                  'valor-entrada': item.tipo === 'entrada' || item.tipo === 'investimento',
+                  'valor-saida': item.tipo === 'saida' || item.tipo === 'saida-reserva' || item.tipo === 'saida-investimento',
+                  'valor-reserva': item.tipo === 'reserva'
+                }">R$ {{ formatarMoeda(item.valorRealizado) }}</span>
+              </div>
+              <div class="card-footer">
+                <button class="btn-acao editar" (click)="preencherEdicao(item)">Editar</button>
+                <button class="btn-acao excluir" (click)="excluir(item.id!)">Excluir</button>
               </div>
             </div>
-
-            <ng-template #listaVaziaPagina>
-              <div class="vazio">
-                Nenhum lançamento neste mês.
-                Cadastre o primeiro acima.
-              </div>
-            </ng-template>
           </div>
+          <ng-template #listaVaziaPagina>
+            <div class="vazio">Nenhum lançamento registrado neste mês.</div>
+          </ng-template>
         </div>
       </ng-container>
     </div>
 
+    <!-- MODAL DA CALCULADORA CENTRALIZADO -->
+    @if (isCalculatorOpen()) {
+      <div class="calc-modal-overlay" (click)="fecharCalculadora()">
+        <div class="calc-modal-container" (click)="$event.stopPropagation()">
+          <div class="calc-header-bar">
+            <span class="calc-title-text">calcFlux</span>
+            <button class="calc-close-btn" (click)="fecharCalculadora()" aria-label="Fechar">
+              ✕
+            </button>
+          </div>
+          <div style="padding: 16px;">
+            <app-calculator (valueSelected)="fecharCalculadora()"></app-calculator>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- MODAL DO BLOCO DE NOTAS -->
+    @if (isNotasOpen()) {
+      <div class="calc-modal-overlay" (click)="fecharNotasModal()">
+        <div class="notas-modal-container" (click)="$event.stopPropagation()">
+          <div class="calc-header-bar">
+            <span class="calc-title-text">Bloco de Notas</span>
+            <button class="calc-close-btn" (click)="fecharNotasModal()" aria-label="Fechar">
+              ✕
+            </button>
+          </div>
+
+          <div class="notas-body-scroll">
+            <div class="nota-form-card">
+              <input class="input-nota" [(ngModel)]="tituloNotaInput" placeholder="Título da nota..." />
+              <textarea class="input-nota" [(ngModel)]="conteudoNotaInput" placeholder="Escreva sua nota aqui..."></textarea>
+              <button class="btn-salvar-nota" (click)="salvarNota()">
+                {{ editandoNotaId ? 'Atualizar Nota' : 'Criar Nova Nota' }}
+              </button>
+            </div>
+
+            <div class="notas-grid" *ngIf="notas().length > 0; else semNotasModal">
+              <div *ngFor="let nota of notas()" class="nota-card-item" [style.--cor-destaque]="nota.cor">
+                <h4 class="nota-card-titulo">{{ nota.titulo }}</h4>
+                <p class="nota-card-texto">{{ nota.conteudo }}</p>
+                <div class="nota-card-footer">
+                  <span>{{ nota.dataAtualizacao | date:'dd/MM/yyyy HH:mm' }}</span>
+                  <div class="nota-acoes">
+                    <button class="btn-acao-n editar" (click)="carregarEdicaoNota(nota)">Editar</button>
+                    <button class="btn-acao-n excluir" (click)="excluirNota(nota.id)">Excluir</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <ng-template #semNotasModal>
+              <div class="vazio" style="padding: 24px; font-size: 0.85rem;">Nenhuma nota salva. Crie sua primeira nota acima!</div>
+            </ng-template>
+          </div>
+        </div>
+      </div>
+    }
+
     <nav class="bottom-nav" role="navigation" aria-label="Navegação principal">
-      <button
-        class="nav-tab"
-        [class.ativo]="viewAtual() === 'inicio'"
-        (click)="irParaInicio()"
-      >
-        <svg class="nav-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 10.5 12 3l9 7.5"></path>
-          <path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"></path>
-        </svg>
+      <button class="nav-tab" [class.ativo]="viewAtual() === 'inicio'" (click)="irParaInicio()">
+        <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
         <span class="nav-tab-label">Início</span>
       </button>
 
-      <button
-        class="nav-tab"
-        [class.ativo]="viewAtual() === 'lancamentos'"
-        (click)="irParaLancamentos()"
-      >
-        <svg class="nav-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M7 3v4M7 3H4a1 1 0 0 0-1 1v3"></path>
-          <path d="M17 21v-4M17 21h3a1 1 0 0 0 1-1v-3"></path>
-          <path d="M3 7h13a4 4 0 0 1 4 4v1"></path>
-          <path d="M21 17H8a4 4 0 0 1-4-4v-1"></path>
-        </svg>
+      <button class="nav-tab" [class.ativo]="viewAtual() === 'lancamentos'" (click)="irParaLancamentos()">
+        <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
         <span class="nav-tab-label">Lançamentos</span>
+      </button>
+
+      <button class="nav-tab" [class.ativo]="viewAtual() === 'analytics'" (click)="irParaAnalytics()">
+        <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+        <span class="nav-tab-label">Analytics</span>
       </button>
     </nav>
   `
 })
 export class DashboardComponent implements OnInit {
-  @ViewChild('formTop')
-  formTop?: ElementRef<HTMLDivElement>;
+  @ViewChild('formTop') formTop?: ElementRef<HTMLDivElement>;
+
+  private readonly notaService = inject(NotaService);
 
   viewAtual = signal<ViewAtualExtendida>('inicio');
   menuAberto = signal<boolean>(false);
+  
+  isCalculatorOpen = signal<boolean>(false);
+  isNotasOpen = signal<boolean>(false);
+
+  notas = this.notaService.notas;
+  tituloNotaInput = '';
+  conteudoNotaInput = '';
+  editandoNotaId: string | null = null;
+
   lancamentos = signal<Lancamento[]>([]);
   todosLancamentos = signal<Lancamento[]>([]);
   tipoAnaliseSelecionado = signal<TipoLancamentoFinanceiro>('saida');
   editandoId: number | null = null;
   operacaoEmAndamento = false;
 
+  indiceCardAtual = 0;
   mesAtual: string = new Date().toISOString().substring(0, 7);
+  novoValorTexto = '';
+  novo: Lancamento & { tipo: TipoLancamentoFinanceiro } = this.criarLancamentoVazio();
 
-  novo: Lancamento & {
-    tipo: TipoLancamentoFinanceiro;
-  } = this.criarLancamentoVazio();
+  // Lista de categorias padrão pré-definidas solicitadas
+  readonly categoriasPadrao: string[] = [
+    'salario',
+    'supermercado',
+    'dentista',
+    'aluguel',
+    'farmacia',
+    'corte de cabelo',
+    'cosmedico',
+    'uber',
+    'pix',
+    'cartão de crédito'
+  ];
 
   readonly tiposParaAnalise: TipoLancamentoFinanceiro[] = [
     'saida',
     'entrada',
     'reserva',
     'investimento',
-    'saida-reserva',
-    'saida-investimento'
+    'saida-reserva' as TipoLancamentoFinanceiro,
+    'saida-investimento' as TipoLancamentoFinanceiro
   ];
-
-  private readonly rotulosTipo: Partial<Record<TipoLancamentoFinanceiro, string>> = {
-    entrada: 'Entrada',
-    saida: 'Saída (Despesas)',
-    reserva: 'Reserva',
-    investimento: 'Investimento',
-    'saida-reserva': 'Saída da Reserva',
-    'saida-investimento': 'Saída dos Investimentos'
+  
+  public readonly rotulosTipo: Partial<Record<TipoLancamentoFinanceiro, string>> = {
+    entrada: 'Entradas',
+    saida: 'Saídas / Despesas',
+    reserva: 'Reservas',
+    investimento: 'Investimentos',
+    'saida-reserva': 'Saída (Da Reserva)',
+    'saida-investimento': 'Saída (Dos Investimentos)'
   };
 
-  private readonly iconesSvgCategoria: Record<string, string> = {
-    'alimentacao': `<svg class="svg-icon-pro" viewBox="0 0 24 24"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/></svg>`,
-    'mercado': `<svg class="svg-icon-pro" viewBox="0 0 24 24"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>`,
-    'transporte': `<svg class="svg-icon-pro" viewBox="0 0 24 24"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.22.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.85 7h10.29l1.04 3H5.81l1.04-3zM19 17H5v-4.66l.12-.34h13.76l.12.34V17z"/></svg>`,
-    'combustivel': `<svg class="svg-icon-pro" viewBox="0 0 24 24"><path d="M19.77 7.23l.01-.01-3.71-3.71L14.69 5.06 17 7.37V9h-3V6c0-1.1-.9-2-2-2H9c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h3c1.1 0 2-.9 2-2v-4h3v2c0 1.1.9 2 2 2h2c1.1 0 2-.9 2-2v-6.77c0-.69-.28-1.32-.77-1.8zm-5.77 9.77H9V6h5v11z"/></svg>`,
-    'lazer': `<svg class="svg-icon-pro" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>`,
-    'educacao': `<svg class="svg-icon-pro" viewBox="0 0 24 24"><path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3zM5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82z"/></svg>`,
-    'saude': `<svg class="svg-icon-pro" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`,
-    'moradia': `<svg class="svg-icon-pro" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>`,
-    'aluguel': `<svg class="svg-icon-pro" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>`,
-    'assinatura': `<svg class="svg-icon-pro" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-5 14H4v-4h11v4zm0-5H4V9h11v4zm5 5h-4V9h4v9z"/></svg>`,
-    'geral': `<svg class="svg-icon-pro" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/></svg>`
-  };
-
-  private readonly paletaCoresCategoria: string[] = [
-    '#0d9488', '#2563eb', '#10b981', '#f59e0b', '#ef4444',
-    '#8b5cf6', '#ec4899', '#facc15', '#06b6d4', '#84cc16'
-  ];
-
+  private readonly paletaCoresCategoria: string[] = ['#8b5cf6', '#38bdf8', '#34d399', '#f59e0b', '#ec4899', '#6366f1'];
   private readonly mapaCorPorCategoria = new Map<string, string>();
   private proximoIndiceCor = 0;
+  private readonly circunferenciaDonut = 2 * Math.PI * 60;
 
-  private readonly raioDonut = 60;
-  private readonly circunferenciaDonut = 2 * Math.PI * this.raioDonut;
+  private resumoMes = computed(() => this.service.calcularResumo(this.lancamentos()));
+  totalEntradas = computed(() => this.resumoMes().entradas);
+  totalDespesas = computed(() => this.resumoMes().despesas);
+  totalGastosMes = computed(() => this.resumoMes().despesas);
+  totalReservaMes = computed(() => this.resumoMes().reservas);
+  totalInvestimentoMes = computed(() => this.resumoMes().investimentos);
+  saldoReal = computed(() => this.resumoMes().saldoReal);
 
-  totalEntradas = computed(() =>
-    this.analiseService.somarValorRealizado(
-      this.analiseService.filtrarPorTipoEStatusPago(this.lancamentos(), 'entrada')
-    )
-  );
-
-  totalDespesas = computed(() =>
-    this.analiseService.somarValorRealizado(
-      this.analiseService.filtrarPorTipoEStatusPago(this.lancamentos(), 'saida')
-    )
-  );
-
-  private totalReservaMes = computed(() =>
-    this.analiseService.somarValorRealizado(
-      this.analiseService.filtrarPorTipoEStatusPago(this.lancamentos(), 'reserva')
-    )
-  );
-
-  private totalSaidaReservaMes = computed(() =>
-    this.analiseService.somarValorRealizado(
-      this.analiseService.filtrarPorTipoEStatusPago(this.lancamentos(), 'saida-reserva')
-    )
-  );
-
-  private totalInvestimentoMes = computed(() =>
-    this.analiseService.somarValorRealizado(
-      this.analiseService.filtrarPorTipoEStatusPago(this.lancamentos(), 'investimento')
-    )
-  );
-
-  private totalSaidaInvestimentoMes = computed(() =>
-    this.analiseService.somarValorRealizado(
-      this.analiseService.filtrarPorTipoEStatusPago(this.lancamentos(), 'saida-investimento')
-    )
-  );
-
-  totalGastosMes = computed(() =>
-    this.totalDespesas() +
-    this.totalSaidaReservaMes() +
-    this.totalSaidaInvestimentoMes()
-  );
-
-  totalReserva = computed(() => {
-    const aportes = this.analiseService.somarValorRealizado(
-      this.analiseService.filtrarPorTipoEStatusPago(this.todosLancamentos(), 'reserva')
-    );
-    const retiradas = this.analiseService.somarValorRealizado(
-      this.analiseService.filtrarPorTipoEStatusPago(this.todosLancamentos(), 'saida-reserva')
-    );
-    return aportes - retiradas;
+  statusConfig = computed(() => {
+    const saldo = this.saldoReal();
+    if (saldo >= 800) {
+      return { label: 'Tranquilo (Bom saldo disponível)', textColor: '#34d399', bgColor: 'rgba(6, 78, 59, 0.4)', borderColor: 'rgba(52, 211, 153, 0.4)', dotColor: '#34d399' };
+    } else if (saldo >= 300) {
+      return { label: 'Alerta (Cuidado com os gastos)', textColor: '#fbbf24', bgColor: 'rgba(120, 53, 15, 0.4)', borderColor: 'rgba(251, 191, 36, 0.4)', dotColor: '#fbbf24' };
+    } else {
+      return { label: 'Crítico (Gastos excedem o limite)', textColor: '#f87171', bgColor: 'rgba(127, 29, 29, 0.4)', borderColor: 'rgba(248, 113, 113, 0.4)', dotColor: '#f87171' };
+    }
   });
 
-  totalInvestimentos = computed(() => {
-    const aportes = this.analiseService.somarValorRealizado(
-      this.analiseService.filtrarPorTipoEStatusPago(this.todosLancamentos(), 'investimento')
-    );
-    const retiradas = this.analiseService.somarValorRealizado(
-      this.analiseService.filtrarPorTipoEStatusPago(this.todosLancamentos(), 'saida-investimento')
-    );
-    return aportes - retiradas;
-  });
+  totalGlobalEntradas = computed(() => this.service.calcularResumo(this.todosLancamentos()).entradas);
+  totalGlobalSaidas = computed(() => this.service.calcularResumo(this.todosLancamentos()).despesas);
+  balancoGlobal = computed(() => this.totalGlobalEntradas() - this.totalGlobalSaidas());
 
-  saldoReal = computed(() =>
-    this.totalEntradas() -
-    this.totalDespesas() -
-    this.totalReservaMes() -
-    this.totalInvestimentoMes()
-  );
+  analisePorTipoSelecionado = computed<AnaliseTipoResultado>(() => {
+    const tipoAlvo = this.tipoAnaliseSelecionado();
+    const filtrados = this.lancamentos().filter(l => l.tipo === tipoAlvo);
+    const mapa = new Map<string, { valor: number; quantidade: number }>();
 
-  economiaMes = computed(() =>
-    this.totalReservaMes() + this.totalInvestimentoMes()
-  );
-
-  percentualEconomiaMes = computed(() => {
-    const gastos = this.totalGastosMes();
-    if (gastos <= 0) return 0;
-    return Math.min((this.economiaMes() / gastos) * 100, 100);
-  });
-
-  statusFinanceiro = computed(() =>
-    this.analiseService.calcularStatusFinanceiro(this.saldoReal())
-  );
-
-  analiseTipoAtual = computed<AnaliseTipoResultado | null>(() => {
-    const tipo = this.tipoAnaliseSelecionado();
-    const registros = this.lancamentos().filter(
-      item => item.tipo === tipo && item.statusPagamento === 'pago'
-    );
-
-    if (registros.length === 0) {
-      return null;
+    for (const item of filtrados) {
+      const cat = (item.categoria || 'Geral').trim();
+      const val = Number(item.valorRealizado) || 0;
+      const atual = mapa.get(cat) || { valor: 0, quantidade: 0 };
+      mapa.set(cat, { valor: atual.valor + val, quantidade: atual.quantidade + 1 });
     }
 
-    const mapaCategorias = new Map<string, { valor: number; quantidade: number }>();
+    let totalGeral = 0;
+    for (const data of mapa.values()) {
+      totalGeral += data.valor;
+    }
 
-    for (const registro of registros) {
-      let categoria = registro.categoria?.trim() || 'Geral';
+    const itensCalculados: ItemDonut[] = [];
+    let acumuladoOffset = 0;
 
-      if (tipo === 'saida-reserva') {
-        categoria = `Reserva: ${categoria}`;
-      } else if (tipo === 'saida-investimento') {
-        categoria = `Investimento: ${categoria}`;
+    for (const [cat, data] of mapa.entries()) {
+      if (!this.mapaCorPorCategoria.has(cat)) {
+        this.mapaCorPorCategoria.set(cat, this.paletaCoresCategoria[this.proximoIndiceCor % this.paletaCoresCategoria.length]);
+        this.proximoIndiceCor++;
       }
+      const cor = this.mapaCorPorCategoria.get(cat)!;
+      const percentual = totalGeral > 0 ? (data.valor / totalGeral) * 100 : 0;
+      const comprimentoTraco = totalGeral > 0 ? (data.valor / totalGeral) * this.circunferenciaDonut : 0;
+      const dashArray = `${comprimentoTraco} ${this.circunferenciaDonut}`;
+      const dashOffset = -acumuladoOffset;
+      acumuladoOffset += comprimentoTraco;
 
-      const atual = mapaCategorias.get(categoria) ?? { valor: 0, quantidade: 0 };
-      atual.valor += registro.valorRealizado;
-      atual.quantidade += 1;
-      mapaCategorias.set(categoria, atual);
-    }
-
-    const total = Array.from(mapaCategorias.values())
-      .reduce((soma, item) => soma + item.valor, 0);
-
-    if (total <= 0) return null;
-
-    let percentualAcumulado = 0;
-
-    const itens: ItemDonut[] = Array.from(mapaCategorias.entries())
-      .sort((a, b) => b[1].valor - a[1].valor)
-      .map(([categoria, dados]) => {
-        const percentual = (dados.valor / total) * 100;
-        const comprimentoArco = (percentual / 100) * this.circunferenciaDonut;
-        const dashArray = `${comprimentoArco.toFixed(2)} ${(this.circunferenciaDonut - comprimentoArco).toFixed(2)}`;
-        const dashOffset = -((percentualAcumulado / 100) * this.circunferenciaDonut);
-
-        percentualAcumulado += percentual;
-
-        return {
-          categoria,
-          valor: dados.valor,
-          quantidade: dados.quantidade,
-          percentual,
-          cor: this.corParaCategoria(categoria),
-          iconeSvg: this.iconeSvgParaCategoria(categoria),
-          dashArray,
-          dashOffset
-        };
+      itensCalculados.push({
+        categoria: cat,
+        valor: data.valor,
+        quantidade: data.quantidade,
+        percentual,
+        cor,
+        iconeSvg: '',
+        dashArray,
+        dashOffset
       });
+    }
 
     return {
-      itens,
-      total,
-      quantidadeTotal: registros.length
+      itens: itensCalculados.sort((a, b) => b.valor - a.valor),
+      total: totalGeral,
+      quantidadeTotal: filtrados.length
     };
+  });
+
+  analisePorTypeItens = computed(() => this.analisePorTipoSelecionado().itens);
+
+  historicoRecente = computed<HistoricoItem[]>(() => {
+    return [...this.todosLancamentos()]
+      .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+      .slice(0, 10)
+      .map(item => ({
+        id: item.id,
+        descricao: item.descricao,
+        categoria: item.categoria || 'Geral',
+        data: item.data,
+        tipo: item.tipo,
+        valor: Number(item.valorRealizado) || 0
+      }));
   });
 
   evolucaoSaldoMensal = computed(() => {
     const registros = this.lancamentos();
-    const larguraSvg = 680;
-    const alturaSvg = 90;
-
+    const largura = 680;
+    const altura = 95;
     if (!this.mesAtual || registros.length === 0) {
-      const linhaBase = `M0,${alturaSvg / 2} L${larguraSvg},${alturaSvg / 2}`;
-      return {
-        linha: linhaBase,
-        area: `${linhaBase} L${larguraSvg},${alturaSvg} L0,${alturaSvg} Z`
-      };
+      const base = `M0,${altura / 2} L${largura},${altura / 2}`;
+      return { linha: base, area: `${base} L${largura},${altura} L0,${altura} Z` };
     }
-
     const [ano, mes] = this.mesAtual.split('-').map(Number);
-    const diasNoMes = new Date(ano, mes, 0).getDate();
-    const saldoPorDia: number[] = new Array(diasNoMes).fill(0);
-
-    for (const registro of registros) {
-      if (registro.statusPagamento !== 'pago') continue;
-      const dia = new Date(registro.data).getDate();
-      const indiceDia = Math.min(Math.max(dia - 1, 0), diasNoMes - 1);
-      const sinal = registro.tipo === 'entrada' ? 1 : (registro.tipo === 'saida' || registro.tipo === 'reserva' || registro.tipo === 'investimento' ? -1 : 0);
-      saldoPorDia[indiceDia] += registro.valorRealizado * sinal;
+    const dias = new Date(ano, mes, 0).getDate();
+    const acumulados: number[] = new Array(dias).fill(0);
+    for (const r of registros) {
+      if (r.statusPagamento !== 'pago') continue;
+      const dia = new Date(r.data).getDate() - 1;
+      if (dia >= 0 && dia < dias) {
+        acumulados[dia] += r.tipo === 'entrada' ? (Number(r.valorRealizado) || 0) : -(Number(r.valorRealizado) || 0);
+      }
     }
-
-    const acumulados: number[] = [];
     let corrente = 0;
-    for (const valorDia of saldoPorDia) {
-      corrente += valorDia;
-      acumulados.push(corrente);
-    }
-
-    const minimo = Math.min(...acumulados, 0);
-    const maximo = Math.max(...acumulados, 0);
-    const amplitude = (maximo - minimo) || 1;
-    const passoX = larguraSvg / ((diasNoMes - 1) || 1);
-
-    const pontos: PontoEvolucao[] = acumulados.map((valor, indice) => ({
-      x: indice * passoX,
-      y: alturaSvg - ((valor - minimo) / amplitude) * alturaSvg
-    }));
-
-    const linha = pontos
-      .map((ponto, indice) => `${indice === 0 ? 'M' : 'L'}${ponto.x.toFixed(1)},${ponto.y.toFixed(1)}`)
-      .join(' ');
-
-    const area = `${linha} L${larguraSvg},${alturaSvg} L0,${alturaSvg} Z`;
-    return { linha, area };
+    const saldos = acumulados.map(v => (corrente += v));
+    const min = Math.min(...saldos, 0);
+    const max = Math.max(...saldos, 0);
+    const amp = (max - min) || 1;
+    const passoX = largura / ((dias - 1) || 1);
+    const pontos = saldos.map((v, i) => ({ x: i * passoX, y: altura - ((v - min) / amp) * altura }));
+    const linha = pontos.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    return { linha, area: `${linha} L${largura},${altura} L0,${altura} Z` };
   });
 
   constructor(
     private readonly service: FinanceiroService,
-    private readonly analiseService: AnaliseFinanceiraService,
     private readonly pdfExportService: PdfExportService,
     private readonly excelExportService: ExcelExportService,
     private readonly backupService: BackupService,
@@ -2126,50 +1533,95 @@ export class DashboardComponent implements OnInit {
     await this.carregarTodosLancamentos();
   }
 
-  alternarMenu(): void { this.menuAberto.update(valor => !valor); }
+  formatarMoeda(valor: number | null | undefined): string {
+    const n = Number(valor);
+    if (!Number.isFinite(n)) return '0,00';
+    return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  formatarNomeMes(anoMes: string): string {
+    if (!/^\d{4}-\d{2}$/.test(anoMes)) return anoMes;
+    const [ano, mes] = anoMes.split('-').map(Number);
+    const nome = new Date(ano, mes - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+    return nome.charAt(0).toUpperCase() + nome.slice(1).replace(' de ', ' ');
+  }
+
+  onValorChange(v: string): void {
+    this.novoValorTexto = v;
+    const limpo = v.replace(/\./g, '').replace(',', '.').trim();
+    const n = parseFloat(limpo);
+    this.novo.valorRealizado = Number.isFinite(n) ? n : 0;
+  }
+
+  proximoCard(): void { this.indiceCardAtual = (this.indiceCardAtual + 1) % 4; }
+  cardAnterior(): void { this.indiceCardAtual = (this.indiceCardAtual - 1 + 4) % 4; }
+  irParaCard(i: number): void { this.indiceCardAtual = i; }
+
+  alternarMenu(): void { this.menuAberto.update(v => !v); }
   fecharMenu(): void { this.menuAberto.set(false); }
-  irParaInicio(): void { this.viewAtual.set('inicio'); this.fecharMenu(); }
-  irParaLancamentos(): void { this.viewAtual.set('lancamentos'); this.fecharMenu(); }
-  irParaRelatorio(): void { this.viewAtual.set('relatorio'); this.fecharMenu(); }
-  irParaMetas(): void { this.viewAtual.set('metas'); this.fecharMenu(); }
 
-  selecionarTipoAnalise(tipo: string): void {
-    this.tipoAnaliseSelecionado.set(tipo as TipoLancamentoFinanceiro);
+  abrirCalculadora(): void {
+    this.isCalculatorOpen.set(true);
+    this.fecharMenu();
   }
 
-  rotuloTipo(tipo: TipoLancamentoFinanceiro): string {
-    return this.rotulosTipo[tipo] ?? tipo;
+  fecharCalculadora(): void {
+    this.isCalculatorOpen.set(false);
   }
 
-  private iconeSvgParaCategoria(categoria: string): string {
-    const normalizada = this.normalizarTexto(categoria);
-    const chave = Object.keys(this.iconesSvgCategoria).find(
-      k => normalizada === k || normalizada.includes(k)
-    );
-    return chave ? this.iconesSvgCategoria[chave] : this.iconesSvgCategoria['geral'];
+  abrirNotasModal(): void {
+    this.isNotasOpen.set(true);
+    this.fecharMenu();
   }
 
-  private corParaCategoria(categoria: string): string {
-    const chave = this.normalizarTexto(categoria);
+  fecharNotasModal(): void {
+    this.isNotasOpen.set(false);
+    this.editandoNotaId = null;
+    this.tituloNotaInput = '';
+    this.conteudoNotaInput = '';
+  }
 
-    const corExistente = this.mapaCorPorCategoria.get(chave);
-    if (corExistente) {
-      return corExistente;
+  salvarNota(): void {
+    if (!this.conteudoNotaInput.trim() && !this.tituloNotaInput.trim()) return;
+
+    if (this.editandoNotaId) {
+      this.notaService.atualizarNota(
+        this.editandoNotaId,
+        this.tituloNotaInput.trim() || 'Nota sem título',
+        this.conteudoNotaInput.trim()
+      );
+      this.editandoNotaId = null;
+    } else {
+      this.notaService.adicionarNota(
+        this.tituloNotaInput.trim() || 'Nota sem título',
+        this.conteudoNotaInput.trim()
+      );
     }
 
-    const corNova = this.paletaCoresCategoria[this.proximoIndiceCor % this.paletaCoresCategoria.length];
-    this.mapaCorPorCategoria.set(chave, corNova);
-    this.proximoIndiceCor++;
-
-    return corNova;
+    this.tituloNotaInput = '';
+    this.conteudoNotaInput = '';
+    this.cdr.markForCheck();
   }
 
-  private normalizarTexto(valor: string): string {
-    return valor.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  carregarEdicaoNota(nota: Nota): void {
+    this.editandoNotaId = nota.id;
+    this.tituloNotaInput = nota.titulo;
+    this.conteudoNotaInput = nota.conteudo;
   }
+
+  excluirNota(id: string): void {
+    if (confirm('Deseja realmente excluir esta nota?')) {
+      this.notaService.deletarNota(id);
+      this.cdr.markForCheck();
+    }
+  }
+
+  irParaInicio(): void { this.viewAtual.set('inicio'); this.fecharMenu(); }
+  irParaLancamentos(): void { this.viewAtual.set('lancamentos'); this.fecharMenu(); }
+  irParaAnalytics(): void { this.viewAtual.set('analytics'); this.fecharMenu(); }
 
   async carregar(): Promise<void> {
-    if (!this.mesEhValido(this.mesAtual)) {
+    if (!/^\d{4}-\d{2}$/.test(this.mesAtual)) {
       this.lancamentos.set([]);
       return;
     }
@@ -2184,19 +1636,9 @@ export class DashboardComponent implements OnInit {
     this.cdr.markForCheck();
   }
 
-  get nomeMesAtual(): string {
-    if (!this.mesAtual) return 'Selecione o mês';
-    const [ano, mes] = this.mesAtual.split('-').map(Number);
-    return new Date(ano, mes - 1, 1).toLocaleString('pt-BR', { month: 'long' });
-  }
-
-  async selecionarMes(novoMes: string): Promise<void> {
-    this.mesAtual = novoMes;
+  async selecionarMes(m: string): Promise<void> {
+    this.mesAtual = m;
     await this.carregar();
-  }
-
-  private mesEhValido(mes: string): boolean {
-    return /^\d{4}-\d{2}$/.test(mes);
   }
 
   async salvar(): Promise<void> {
@@ -2205,164 +1647,75 @@ export class DashboardComponent implements OnInit {
       return;
     }
     if (!this.novo.valorRealizado || this.novo.valorRealizado <= 0) {
-      this.notificacaoService.avisar('Informe um valor maior que zero.');
+      this.notificacaoService.avisar('Informe um valor válido.');
       return;
     }
+    if (!this.novo.categoria?.trim()) this.novo.categoria = 'geral';
+    if (!this.editandoId) this.novo.data = new Date().toISOString();
 
-    if (this.novo.tipo === 'saida-reserva' || this.novo.tipo === 'saida-investimento') {
-      const tipoValidacao = this.novo.tipo;
-      const validacao = (this.service as any).validarDisponibilidadeRecurso
-        ? (this.service as any).validarDisponibilidadeRecurso(
-            this.todosLancamentos(),
-            tipoValidacao,
-            this.novo.valorRealizado
-          )
-        : { valido: true };
-
-      if (!validacao.valido) {
-        this.notificacaoService.avisar(validacao.mensagem);
-        return;
-      }
-    }
-
-    if (!this.novo.categoria?.trim()) {
-      this.novo.categoria = 'Geral';
-    }
-
-    if (!this.editandoId) {
-      this.novo.data = new Date().toISOString();
-    }
-
-    const lancamentoParaSalvar: Lancamento = {
-      ...this.novo,
-      categoria: this.novo.categoria.trim(),
-      tipo: this.novo.tipo as Lancamento['tipo']
-    };
-
+    this.operacaoEmAndamento = true;
     try {
-      this.operacaoEmAndamento = true;
       if (this.editandoId) {
-        await firstValueFrom(this.service.atualizar(this.editandoId, lancamentoParaSalvar));
+        await firstValueFrom(this.service.atualizar(this.editandoId, this.novo));
+        this.notificacaoService.avisar('Atualizado com sucesso!');
       } else {
-        await firstValueFrom(this.service.adicionar(lancamentoParaSalvar));
+        await firstValueFrom(this.service.adicionar(this.novo));
+        this.notificacaoService.avisar('Salvo com sucesso!');
       }
-      this.resetForm();
+      this.novo = this.criarLancamentoVazio();
+      this.novoValorTexto = '';
+      this.editandoId = null;
       await this.carregar();
       await this.carregarTodosLancamentos();
-    } catch (error) {
-      this.notificarErro('Erro ao salvar lançamento: ', error);
     } finally {
       this.operacaoEmAndamento = false;
-      this.cdr.markForCheck();
-    }
-  }
-
-  exportarExcel(): void {
-    this.operacaoEmAndamento = true;
-    try {
-      this.excelExportService.exportar(this.lancamentos(), this.mesAtual);
-      this.fecharMenu();
-    } catch (error) {
-      this.notificarErro('Erro ao exportar Excel: ', error);
-    } finally {
-      this.operacaoEmAndamento = false;
-      this.cdr.markForCheck();
-    }
-  }
-
-  async gerarPDF(): Promise<void> {
-    this.operacaoEmAndamento = true;
-    try {
-      await this.pdfExportService.exportar(this.lancamentos(), this.nomeMesAtual, this.mesAtual);
-      this.fecharMenu();
-    } catch (error) {
-      this.notificarErro('Erro ao gerar PDF: ', error);
-    } finally {
-      this.operacaoEmAndamento = false;
-      this.cdr.markForCheck();
-    }
-  }
-
-  async exportarBackup(): Promise<void> {
-    this.operacaoEmAndamento = true;
-    try {
-      const todosLancamentos = await firstValueFrom(this.service.listar());
-      await this.backupService.exportar(todosLancamentos);
-      this.fecharMenu();
-    } catch (error) {
-      this.notificarErro('Erro ao gerar backup: ', error);
-    } finally {
-      this.operacaoEmAndamento = false;
-      this.cdr.markForCheck();
-    }
-  }
-
-  async importarBackup(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    const arquivo = input.files?.[0];
-    if (!arquivo) return;
-
-    this.operacaoEmAndamento = true;
-    try {
-      const backup = await this.backupService.lerArquivo(arquivo);
-      const confirmar = this.notificacaoService.confirmar(
-        `Importar ${backup.lancamentos.length} lançamentos do backup de ` +
-        `${new Date(backup.dataExportacao).toLocaleDateString('pt-BR')}?\n\n` +
-        `Isso vai ADICIONAR aos dados atuais (não substitui nada).`
-      );
-
-      if (!confirmar) return;
-
-      await firstValueFrom(this.service.importarLote(backup.lancamentos));
-      this.notificacaoService.avisar(`${backup.lancamentos.length} lançamentos importados com sucesso!`);
-      await this.carregar();
-      await this.carregarTodosLancamentos();
-      this.fecharMenu();
-    } catch (error) {
-      this.notificarErro('Erro ao importar backup: ', error);
-    } finally {
-      this.operacaoEmAndamento = false;
-      input.value = '';
-      this.cdr.markForCheck();
-    }
-  }
-
-  async excluir(id: number): Promise<void> {
-    const confirmar = this.notificacaoService.confirmar('Deseja realmente excluir este lançamento?');
-    if (!confirmar) return;
-
-    try {
-      this.operacaoEmAndamento = true;
-      await firstValueFrom(this.service.deletar(id));
-      await this.carregar();
-      await this.carregarTodosLancamentos();
-    } catch (error) {
-      this.notificarErro('Erro ao excluir lançamento: ', error);
-    } finally {
-      this.operacaoEmAndamento = false;
-      this.cdr.markForCheck();
     }
   }
 
   preencherEdicao(item: Lancamento): void {
-    this.editandoId = item.id!;
-    this.novo = {
-      ...item,
-      tipo: item.tipo as TipoLancamentoFinanceiro
-    };
-    this.viewAtual.set('lancamentos');
-
-    setTimeout(() => {
-      this.formTop?.nativeElement.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start'
-      });
-    });
+    this.editandoId = item.id ?? null;
+    this.novo = { ...item, tipo: item.tipo as TipoLancamentoFinanceiro };
+    this.novoValorTexto = this.formatarMoeda(item.valorRealizado);
+    if (this.viewAtual() !== 'lancamentos') {
+      this.viewAtual.set('lancamentos');
+      this.fecharMenu();
+    }
   }
 
-  resetForm(): void {
-    this.novo = this.criarLancamentoVazio();
-    this.editandoId = null;
+  async excluir(id: number): Promise<void> {
+    if (confirm('Deseja realmente excluir este lançamento?')) {
+      await firstValueFrom(this.service.deletar(id));
+      await this.carregar();
+      await this.carregarTodosLancamentos();
+    }
+  }
+
+  gerarPDF(): void {
+    const nomeMesAtual = this.formatarNomeMes(this.mesAtual);
+    this.pdfExportService.exportar(this.lancamentos(), nomeMesAtual, this.mesAtual);
+    this.fecharMenu();
+  }
+
+  exportarExcel(): void {
+    this.excelExportService.exportar(this.lancamentos(), this.mesAtual);
+    this.fecharMenu();
+  }
+
+  async exportarBackup(): Promise<void> {
+    await this.backupService.exportar(this.todosLancamentos());
+    this.fecharMenu();
+  }
+
+  async importarBackup(e: Event): Promise<void> {
+    try {
+      await this.backupService.importar(e);
+      this.notificacaoService.avisar('Backup restaurado com sucesso!');
+      await this.carregar();
+      await this.carregarTodosLancamentos();
+    } catch {
+      this.notificacaoService.avisar('Falha ao restaurar backup.');
+    }
+    this.fecharMenu();
   }
 
   private criarLancamentoVazio(): Lancamento & { tipo: TipoLancamentoFinanceiro } {
@@ -2370,16 +1723,11 @@ export class DashboardComponent implements OnInit {
       descricao: '',
       valorRealizado: 0,
       valorPrevisto: 0,
-      tipo: 'saida',
-      statusPagamento: 'pago',
-      data: new Date().toISOString(),
-      categoria: 'Geral',
-      divisao: 'essencial'
+      divisao: '' as unknown as DivisaoLancamento,
+      categoria: 'salario',
+      tipo: 'saida' as TipoLancamentoFinanceiro,
+      statusPagamento: 'pago' as const,
+      data: new Date().toISOString()
     };
-  }
-
-  private notificarErro(prefixo: string, error: unknown): void {
-    const mensagem = error instanceof Error ? error.message : String(error);
-    this.notificacaoService.avisar(prefixo + mensagem);
   }
 }

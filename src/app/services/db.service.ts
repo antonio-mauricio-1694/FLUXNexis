@@ -1,4 +1,3 @@
-// src/app/services/db.service.ts
 import Dexie, { Table } from 'dexie';
 
 export type TipoLancamento =
@@ -30,25 +29,16 @@ export class FluxNexisDB extends Dexie {
 
   constructor() {
     super('FluxNexisDB');
-
     this.version(1).stores({
       lancamentos: '++id, descricao, categoria, tipo, statusPagamento, data, divisao'
     });
-
     this.version(2).stores({
       lancamentos: '++id, descricao, categoria, tipo, statusPagamento, data, divisao'
     });
-
     this.version(3).stores({
       lancamentos: '++id, descricao, categoria, tipo, statusPagamento, data, divisao'
     });
-
-    // Adicionando a versão 4 para gerenciar o gancho de migração automática e substituição limpa
-    this.version(4).upgrade(async tx => {
-      // Exemplo de rotina automática ao atualizar a versão do banco no dispositivo:
-      // Se você quiser limpar dados antigos corrompidos ou inserir dados padrão (seed) ao atualizar o app:
-      // await tx.table('lancamentos').clear();
-    });
+    this.version(4).upgrade(async () => { /* migração opcional */ });
   }
 }
 

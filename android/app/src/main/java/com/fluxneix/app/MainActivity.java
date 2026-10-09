@@ -1,4 +1,4 @@
-package com.fluxneis.app;
+package com.fluxneix.app;
 
 import com.getcapacitor.BridgeActivity;
 

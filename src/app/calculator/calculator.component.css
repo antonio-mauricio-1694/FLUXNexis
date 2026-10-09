@@ -1,0 +1,21 @@
+:host {
+  display: block;
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+button:active {
+  transform: scale(0.96);
+  filter: brightness(0.9);
+}
+
+/* Efeito de transição suave ao abrir/fechar ou interagir */
+div {
+  box-sizing: border-box;
+}

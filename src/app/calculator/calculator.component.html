@@ -1,0 +1,33 @@
+<div style="width: 100%; color: #ffffff; font-family: inherit;">
+  <div style="margin-bottom: 14px; text-align: right; background: #07090e; padding: 14px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.08);">
+    <div style="font-size: 1.8rem; font-weight: 900; color: #34d399; word-break: break-all; line-height: 1.2;">{{ display() }}</div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+    <button (click)="clear()" style="grid-column: span 2; background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(248,113,113,0.3); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">AC</button>
+    <button (click)="handleOperator('÷')" style="background: #1e2638; color: #34d399; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">÷</button>
+    <button (click)="handleOperator('×')" style="background: #1e2638; color: #34d399; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">×</button>
+
+    <button (click)="inputDigit('7')" style="background: #161b28; color: #fff; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">7</button>
+    <button (click)="inputDigit('8')" style="background: #161b28; color: #fff; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">8</button>
+    <button (click)="inputDigit('9')" style="background: #161b28; color: #fff; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">9</button>
+    <button (click)="handleOperator('-')" style="background: #1e2638; color: #34d399; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">-</button>
+
+    <button (click)="inputDigit('4')" style="background: #161b28; color: #fff; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">4</button>
+    <button (click)="inputDigit('5')" style="background: #161b28; color: #fff; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">5</button>
+    <button (click)="inputDigit('6')" style="background: #161b28; color: #fff; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">6</button>
+    <button (click)="handleOperator('+')" style="background: #1e2638; color: #34d399; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">+</button>
+
+    <button (click)="inputDigit('1')" style="background: #161b28; color: #fff; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">1</button>
+    <button (click)="inputDigit('2')" style="background: #161b28; color: #fff; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">2</button>
+    <button (click)="inputDigit('3')" style="background: #161b28; color: #fff; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">3</button>
+    <button (click)="calculateResult()" style="grid-row: span 2; background: #8b5cf6; color: #fff; border: none; font-weight: 900; font-size: 1.2rem; border-radius: 12px; cursor: pointer;">=</button>
+
+    <button (click)="inputDigit('0')" style="grid-column: span 2; background: #161b28; color: #fff; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">0</button>
+    <button (click)="inputDecimal('.')" style="background: #161b28; color: #fff; border: 1px solid rgba(255,255,255,0.08); font-weight: 800; padding: 12px 0; border-radius: 12px; cursor: pointer;">.</button>
+  </div>
+
+  <button (click)="confirmValue()" style="width: 100%; margin-top: 10px; background: linear-gradient(135deg, #34d399, #10b981); color: #07090e; font-weight: 900; padding: 14px 0; border-radius: 12px; border: none; cursor: pointer; box-shadow: 0 8px 20px rgba(16,185,129,0.3);">
+    Usar Valor
+  </button>
+</div>

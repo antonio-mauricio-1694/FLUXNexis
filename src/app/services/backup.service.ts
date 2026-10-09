@@ -1,54 +1,44 @@
 import { Injectable } from '@angular/core';
-import { Lancamento } from './db.service';
-import { BackupFluxNexis } from './financeiro.model';
-import { Observable, from } from 'rxjs';
+import { Lancamento, db } from './db.service';
 
-@Injectable({
-  providedIn: 'root'
-})
+@Injectable({ providedIn: 'root' })
 export class BackupService {
 
-  exportar(lancamentos: Lancamento[]): Promise<void> {
-    const dados: BackupFluxNexis = {
-      versao: '1.0.0',
-      dataExportacao: new Date().toISOString(),
-      lancamentos
-    };
-
+  async exportar(lancamentos: Lancamento[]): Promise<void> {
+    const dados = lancamentos.map(({ id, ...resto }) => resto);
     const blob = new Blob([JSON.stringify(dados, null, 2)], {
       type: 'application/json'
     });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `fluxnexis-backup-${new Date().toISOString().substring(0, 10)}.json`;
-    link.click();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fluxnexis-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    return Promise.resolve();
   }
 
-  lerArquivo(arquivo: File): Promise<BackupFluxNexis> {
+  importar(event: Event): Promise<Lancamento[]> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return Promise.resolve([]);
+
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (e: ProgressEvent<FileReader>) => {
+      reader.onload = async () => {
         try {
-          const resultado = JSON.parse(e.target?.result as string) as BackupFluxNexis;
-          if (!resultado.lancamentos || !Array.isArray(resultado.lancamentos)) {
-            throw new Error('Arquivo de backup inválido ou corrompido.');
-          }
-          // Tratamento explícito com tipagem para evitar TS7006
-          resultado.lancamentos = resultado.lancamentos.map((item: Lancamento) => ({
-            ...item,
-            valorRealizado: Number(item.valorRealizado) || 0,
-            valorPrevisto: Number(item.valorPrevisto) || 0
-          }));
-          resolve(resultado);
+          const bruto = JSON.parse(String(reader.result)) as Lancamento[];
+          const limpos = bruto.map(({ id, ...resto }) => resto as Lancamento);
+          await db.lancamentos.bulkAdd(limpos);
+          input.value = '';
+          resolve(limpos);
         } catch (err) {
           reject(err);
         }
       };
-      reader.onerror = (error) => reject(error);
-      reader.readAsText(arquivo);
+      reader.onerror = reject;
+      reader.readAsText(file);
     });
   }
 }
