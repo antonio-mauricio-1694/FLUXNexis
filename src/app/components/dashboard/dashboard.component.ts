@@ -17,9 +17,10 @@ import { DivisaoLancamento, Lancamento } from '../../services/db.service';
 import { PdfExportService } from '../../services/pdf-export.service';
 import { ExcelExportService } from '../../services/excel-export.service';
 import { BackupService } from '../../services/backup.service';
+import { BackupArquivo, ModoRestauracao, SnapshotInfo } from '../../services/backup.model';
 import { NotificacaoService } from '../../services/notificacao.service';
 import { NotaService, Nota } from '../../services/nota.service';
-
+import { AutoBackupService } from '../../services/auto-backup.service';
 import { CalculatorComponent } from '../../calculator/calculator.component';
 
 import {
@@ -334,6 +335,10 @@ interface ChipFiltro {
       font-size: clamp(1.05rem, 4.6vw, 1.55rem); font-weight: 900;
       letter-spacing: -0.4px; color: var(--cor); word-break: break-word;
     }
+    .resumo-sub {
+      font-size: 0.78rem; font-weight: 700; color: var(--text-muted);
+      margin-top: -4px; word-break: break-word;
+    }
 
     .drawer {
       position: fixed; top: 0; left: 0; height: 100vh;
@@ -611,6 +616,34 @@ interface ChipFiltro {
     .btn-secundario {
       background: rgba(255, 255, 255, 0.06); border: 1px solid var(--card-border);
     }
+
+    .btn-primario:disabled,
+    .btn-secundario:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .aviso-backup {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 22px;
+      border-radius: var(--radius-md);
+      background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(251, 191, 36, 0.4);
+    }
+    .aviso-backup p {
+      margin: 0; flex: 1; min-width: 180px;
+      font-size: 0.9rem; font-weight: 700; color: #fde68a;
+    }
+    .aviso-backup .btn-secundario { padding: 9px 14px; font-size: 0.85rem; }
+
+    .modal-corpo { padding: 20px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+    .modal-corpo p { margin: 0; font-size: 0.95rem; line-height: 1.45; color: var(--text-secondary); }
+    .modal-corpo strong { color: var(--text-primary); }
+    .modal-corpo .modal-dica { font-size: 0.85rem; color: var(--text-muted); }
+    .modal-acoes { display: flex; flex-direction: column; gap: 10px; }
+    .snapshot-item {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 12px 14px; border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border);
+      font-weight: 700; font-size: 0.92rem;
+    }
+    .snapshot-item .btn-secundario { padding: 9px 14px; font-size: 0.85rem; }
 
     /* Botão flutuante */
     .fab {
@@ -1014,13 +1047,18 @@ interface ChipFiltro {
 
         <button type="button" class="acao-item" (click)="exportarBackup()" [disabled]="operacaoEmAndamento()">
           <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-          Fazer Backup Seguro
+          Salvar backup (Drive, WhatsApp…)
         </button>
 
         <input #inputBackup type="file" accept=".json" hidden (change)="importarBackup($event)" />
         <button type="button" class="acao-item" (click)="inputBackup.click()" [disabled]="operacaoEmAndamento()">
           <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.65-5.65"></path></svg>
-          Restaurar Dados
+          Restaurar de arquivo
+        </button>
+
+        <button type="button" class="acao-item" (click)="abrirBackupsAutomaticos()" [disabled]="operacaoEmAndamento()">
+          <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          Backups automáticos
         </button>
 
         <div class="drawer-rodape">FluxNexis · Arquitetura Moderna DX</div>
@@ -1047,7 +1085,7 @@ interface ChipFiltro {
               <svg style="width: 28px; height: 28px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
             </div>
             <div>
-              <span class="hero-subtitle">Saldo Líquido Disponível (No Mês)</span>
+              <span class="hero-subtitle">Saldo Líquido Disponível</span>
               <div class="hero-balance-value">R$ {{ moeda(saldoReal()) }}</div>
             </div>
           </div>
@@ -1065,6 +1103,13 @@ interface ChipFiltro {
           </div>
           <span class="status-dot-indicator" [style.background-color]="statusConfig().dotColor"></span>
         </div>
+
+        @if (mostrarAvisoBackup()) {
+          <div class="aviso-backup" role="status">
+            <p>{{ textoAvisoBackup() }}</p>
+            <button type="button" class="btn-secundario" (click)="exportarBackup()" [disabled]="operacaoEmAndamento()">Salvar agora</button>
+          </div>
+        }
 
         <div class="quick-actions-grid">
           <button type="button" class="quick-action-btn" (click)="abrirCalculadora()">
@@ -1110,7 +1155,8 @@ interface ChipFiltro {
               </span>
               <span class="resumo-label">Reserva</span>
             </div>
-            <span class="resumo-valor">R$ {{ moeda(totalReservaMes()) }}</span>
+            <span class="resumo-valor">R$ {{ moeda(totalReservaAcumulada()) }}</span>
+            <span class="resumo-sub">Neste mês: R$ {{ moeda(totalReservaMes()) }}</span>
           </div>
 
           <div class="resumo-card" style="--cor: #38bdf8;">
@@ -1120,7 +1166,8 @@ interface ChipFiltro {
               </span>
               <span class="resumo-label">Investimentos</span>
             </div>
-            <span class="resumo-valor">R$ {{ moeda(totalInvestimentoMes()) }}</span>
+            <span class="resumo-valor">R$ {{ moeda(totalInvestimentoAcumulado()) }}</span>
+            <span class="resumo-sub">Neste mês: R$ {{ moeda(totalInvestimentoMes()) }}</span>
           </div>
         </div>
 
@@ -1513,6 +1560,63 @@ interface ChipFiltro {
       </div>
     }
 
+    @if (restauracaoPendente(); as pendente) {
+      <div class="calc-modal-overlay" (click)="cancelarRestauracao()">
+        <div class="notas-modal-container" style="max-width: 460px;" role="dialog" aria-modal="true" aria-label="Restaurar backup" (click)="$event.stopPropagation()">
+          <div class="calc-header-bar">
+            <span class="calc-title-text">Restaurar backup</span>
+            <button type="button" class="calc-close-btn" (click)="cancelarRestauracao()" aria-label="Fechar">✕</button>
+          </div>
+          <div class="modal-corpo">
+            <p>
+              Origem: {{ pendente.origem }}
+              @if (pendente.backup.geradoEm) {
+                · gerado em {{ pendente.backup.geradoEm | date:'dd/MM/yyyy HH:mm' }}
+              }
+            </p>
+            <p>
+              Contém <strong>{{ pendente.backup.lancamentos.length }}</strong> lançamentos
+              e <strong>{{ pendente.backup.notas.length }}</strong> notas.
+            </p>
+            <p class="modal-dica">
+              <strong>Mesclar</strong> adiciona só o que ainda não existe, sem duplicar.
+              <strong>Substituir tudo</strong> apaga os dados atuais; antes disso o app guarda uma cópia de segurança.
+            </p>
+            <div class="modal-acoes">
+              <button type="button" class="btn-primario" (click)="confirmarRestauracao('mesclar')" [disabled]="operacaoEmAndamento()">Mesclar</button>
+              <button type="button" class="btn-secundario" (click)="confirmarRestauracao('substituir')" [disabled]="operacaoEmAndamento()">Substituir tudo</button>
+              <button type="button" class="btn-secundario" (click)="cancelarRestauracao()">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (backupsAutomaticosAberto()) {
+      <div class="calc-modal-overlay" (click)="fecharBackupsAutomaticos()">
+        <div class="notas-modal-container" style="max-width: 460px;" role="dialog" aria-modal="true" aria-label="Backups automáticos" (click)="$event.stopPropagation()">
+          <div class="calc-header-bar">
+            <span class="calc-title-text">Backups automáticos</span>
+            <button type="button" class="calc-close-btn" (click)="fecharBackupsAutomaticos()" aria-label="Fechar">✕</button>
+          </div>
+          <div class="modal-corpo">
+            <p class="modal-dica">
+              O app guarda uma cópia por dia (últimas 7) dentro dele. Elas somem se o app for
+              desinstalado, então use também "Salvar backup" para guardar fora do app.
+            </p>
+            @for (s of listaBackups(); track s.nome) {
+              <div class="snapshot-item">
+                <span>{{ s.rotulo }}</span>
+                <button type="button" class="btn-secundario" (click)="restaurarSnapshot(s.nome)">Restaurar</button>
+              </div>
+            } @empty {
+              <div class="vazio" style="padding: 24px; font-size: 0.85rem;">Nenhum backup automático ainda. O primeiro é criado quando houver dados.</div>
+            }
+          </div>
+        </div>
+      </div>
+    }
+
     <nav class="bottom-nav" role="navigation" aria-label="Navegação principal">
       <button type="button" class="nav-tab" [class.ativo]="viewAtual() === 'inicio'" (click)="irParaInicio()">
         <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
@@ -1536,6 +1640,7 @@ export class DashboardComponent implements OnInit {
   private readonly pdfExportService = inject(PdfExportService);
   private readonly excelExportService = inject(ExcelExportService);
   private readonly backupService = inject(BackupService);
+  private readonly autoBackup = inject(AutoBackupService);
   private readonly notificacaoService = inject(NotificacaoService);
   private readonly notaService = inject(NotaService);
   private readonly cdr = inject(ChangeDetectorRef);
@@ -1547,6 +1652,23 @@ export class DashboardComponent implements OnInit {
   readonly isNotasOpen = signal<boolean>(false);
   readonly formularioAberto = signal<boolean>(false);
   readonly categoriaAberta = signal<boolean>(false);
+
+  readonly restauracaoPendente = signal<{ backup: BackupArquivo; origem: string } | null>(null);
+  readonly backupsAutomaticosAberto = signal<boolean>(false);
+  readonly listaBackups = signal<SnapshotInfo[]>([]);
+  readonly diasSemBackupExterno = signal<number | null>(null);
+
+  /** Avisa quando nunca houve backup fora do app ou faz 7+ dias (e já existem dados). */
+  readonly mostrarAvisoBackup = computed(() => {
+    const dias = this.diasSemBackupExterno();
+    return this.todosLancamentos().length > 0 && (dias === null || dias >= 7);
+  });
+  readonly textoAvisoBackup = computed(() => {
+    const dias = this.diasSemBackupExterno();
+    return dias === null
+      ? 'Você ainda não salvou um backup fora do app.'
+      : `Faz ${dias} dias que você não salva um backup fora do app.`;
+  });
   readonly valoresOcultos = signal<boolean>(this.lerPreferenciaOculto());
 
   readonly notas = this.notaService.notas;
@@ -1578,7 +1700,9 @@ export class DashboardComponent implements OnInit {
     'cosmedico',
     'uber',
     'pix',
-    'cartão de crédito'
+    'cartão de crédito',
+    'Reserva',
+    'Investimento'
   ];
 
   readonly tiposParaAnalise: TipoLancamentoFinanceiro[] = [
@@ -1640,6 +1764,37 @@ export class DashboardComponent implements OnInit {
   readonly totalReservaMes = computed(() => this.resumoMes().reservas);
   readonly totalInvestimentoMes = computed(() => this.resumoMes().investimentos);
   readonly saldoReal = computed(() => this.resumoMes().saldoReal);
+
+  /**
+   * Reserva e Investimentos são acumulativos: o card mostra tudo que foi guardado
+   * até o mês selecionado (inclusive), descontando as saídas da reserva/investimento.
+   * Só entram lançamentos pagos; pendentes ficam de fora até serem pagos.
+   * Para contar também os pendentes, remova a linha do "continue" sobre statusPagamento.
+   */
+  private readonly acumuladoAteMes = computed(() => {
+    const limite = this.mesAtual();
+    let reserva = 0;
+    let investimento = 0;
+
+    for (const l of this.todosLancamentos()) {
+      if (l.statusPagamento === 'pendente') continue;
+      if (this.chaveMes(l.data) > limite) continue;
+
+      const tipo: string = l.tipo;
+      const valor = Number(l.valorRealizado) || 0;
+
+      switch (tipo) {
+        case 'reserva': reserva += valor; break;
+        case 'saida-reserva': reserva -= valor; break;
+        case 'investimento': investimento += valor; break;
+        case 'saida-investimento': investimento -= valor; break;
+      }
+    }
+
+    return { reserva, investimento };
+  });
+  readonly totalReservaAcumulada = computed(() => this.acumuladoAteMes().reserva);
+  readonly totalInvestimentoAcumulado = computed(() => this.acumuladoAteMes().investimento);
 
   /**
    * Diagnóstico relativo à renda do mês (e não a valores fixos em reais).
@@ -1825,6 +1980,7 @@ export class DashboardComponent implements OnInit {
   });
 
   async ngOnInit(): Promise<void> {
+    this.atualizarAvisoBackup();
     await Promise.all([this.carregar(), this.carregarTodosLancamentos()]);
   }
 
@@ -1931,6 +2087,7 @@ export class DashboardComponent implements OnInit {
 
     this.tituloNotaInput = '';
     this.conteudoNotaInput = '';
+    this.registrarSnapshot();
     this.cdr.markForCheck();
   }
 
@@ -1943,6 +2100,7 @@ export class DashboardComponent implements OnInit {
   excluirNota(id: string): void {
     if (confirm('Deseja realmente excluir esta nota?')) {
       this.notaService.deletarNota(id);
+      this.registrarSnapshot();
       this.cdr.markForCheck();
     }
   }
@@ -1967,6 +2125,7 @@ export class DashboardComponent implements OnInit {
   async carregarTodosLancamentos(): Promise<void> {
     const lista = await firstValueFrom(this.service.listar());
     this.todosLancamentos.set(lista);
+    this.registrarSnapshot();
     this.cdr.markForCheck();
   }
 
@@ -2064,20 +2223,96 @@ export class DashboardComponent implements OnInit {
     this.fecharMenu();
   }
 
+  /** Gera o arquivo de backup e abre o compartilhar do Android (Drive, WhatsApp, Arquivos...). */
   async exportarBackup(): Promise<void> {
-    await this.backupService.exportar(this.todosLancamentos());
     this.fecharMenu();
+    this.operacaoEmAndamento.set(true);
+    try {
+      await this.backupService.compartilhar(this.todosLancamentos(), this.notas());
+      this.atualizarAvisoBackup();
+    } catch (erro) {
+      const mensagem = erro instanceof Error ? erro.message.toLowerCase() : '';
+      if (!mensagem.includes('cancel')) {
+        this.notificacaoService.avisar('Não foi possível gerar o backup.');
+      }
+    } finally {
+      this.operacaoEmAndamento.set(false);
+      this.cdr.markForCheck();
+    }
   }
 
+  /** Lê o arquivo escolhido e abre a confirmação (mesclar ou substituir). */
   async importarBackup(e: Event): Promise<void> {
+    this.fecharMenu();
     try {
-      await this.backupService.importar(e);
-      this.notificacaoService.avisar('Backup restaurado com sucesso!');
+      const backup = await this.backupService.lerArquivo(e);
+      if (backup) {
+        this.restauracaoPendente.set({ backup, origem: 'arquivo' });
+      }
+    } catch (erro) {
+      this.notificacaoService.avisar(
+        erro instanceof Error && erro.message ? erro.message : 'Falha ao ler o arquivo de backup.'
+      );
+    }
+    this.cdr.markForCheck();
+  }
+
+  async confirmarRestauracao(modo: ModoRestauracao): Promise<void> {
+    const pendente = this.restauracaoPendente();
+    if (!pendente) return;
+
+    this.operacaoEmAndamento.set(true);
+    try {
+      const resultado = await this.backupService.restaurar(pendente.backup, modo);
+      this.restauracaoPendente.set(null);
+      this.notificacaoService.avisar(
+        `Restaurado: ${resultado.lancamentos} lançamentos e ${resultado.notas} notas.`
+      );
       await Promise.all([this.carregar(), this.carregarTodosLancamentos()]);
     } catch {
-      this.notificacaoService.avisar('Falha ao restaurar backup.');
+      this.notificacaoService.avisar('Falha ao restaurar backup. Nada foi apagado.');
+    } finally {
+      this.operacaoEmAndamento.set(false);
+      this.cdr.markForCheck();
     }
+  }
+
+  cancelarRestauracao(): void {
+    this.restauracaoPendente.set(null);
+  }
+
+  async abrirBackupsAutomaticos(): Promise<void> {
     this.fecharMenu();
+    this.listaBackups.set(await this.autoBackup.listar());
+    this.backupsAutomaticosAberto.set(true);
+  }
+
+  fecharBackupsAutomaticos(): void {
+    this.backupsAutomaticosAberto.set(false);
+  }
+
+  async restaurarSnapshot(nome: string): Promise<void> {
+    try {
+      const backup = await this.backupService.lerSnapshot(nome);
+      this.backupsAutomaticosAberto.set(false);
+      this.restauracaoPendente.set({ backup, origem: 'backup automático' });
+    } catch {
+      this.notificacaoService.avisar('Não foi possível ler esse backup.');
+    }
+  }
+
+  /** Agenda o snapshot diário automático (vários pedidos seguidos viram um só). */
+  private registrarSnapshot(): void {
+    this.autoBackup.agendar(() =>
+      this.backupService.montarBackup(this.todosLancamentos(), this.notas())
+    );
+  }
+
+  private atualizarAvisoBackup(): void {
+    const ultimo = this.backupService.ultimoBackupExterno();
+    this.diasSemBackupExterno.set(
+      ultimo ? Math.floor((Date.now() - ultimo.getTime()) / 86_400_000) : null
+    );
   }
 
   private lerPreferenciaOculto(): boolean {
@@ -2093,6 +2328,11 @@ export class DashboardComponent implements OnInit {
     const agora = new Date();
     const mes = String(agora.getMonth() + 1).padStart(2, '0');
     return `${agora.getFullYear()}-${mes}`;
+  }
+
+  private chaveMes(dataIso: string): string {
+    const data = new Date(dataIso);
+    return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}`;
   }
 
   private chaveDia(data: Date): string {
