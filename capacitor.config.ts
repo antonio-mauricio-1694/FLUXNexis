@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.fluxneix.app',
-  appName: 'FluxNexis',
+  appId: 'com.fluxnexis.app',
+  appName: 'FLUXNexis',
   webDir: 'dist/app/browser'
 };
 
